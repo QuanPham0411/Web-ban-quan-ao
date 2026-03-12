@@ -6,7 +6,7 @@ const products = [
 		name: 'Áo thun basic pastel',
 		price: '249.000',
 		image:
-			'https://images.unsplash.com/photo-1521572163474-6864f9cf17ab?auto=format&fit=crop&w=900&q=80',
+			'https://product.hstatic.net/1000184601/product/men_xanh-infinity__2__7b3f5224f5af4e8b987af577c50c35cd_2048x2048.jpg',
 	},
 	{
 		id: 2,
