@@ -1,71 +1,97 @@
 require('dotenv').config();
 const express = require('express');
-const mysql = require('mysql2');
 const cors = require('cors');
 
 const app = express();
-app.use(cors());
-app.use(express.json()); // Bắt buộc để đọc dữ liệu từ Body (JSON)
+const USE_MOCK_DATA = process.env.USE_MOCK_DATA === 'true';
+const DB_STRICT_MODE = process.env.DB_STRICT_MODE !== 'false';
 
-// Sử dụng Pool để quản lý kết nối hiệu quả hơn trên môi trường Cloud (Aiven/Render)
-const db = mysql.createPool({
-    host: process.env.DB_HOST,
-    user: process.env.DB_USER,
-    password: process.env.DB_PASSWORD,
-    database: process.env.DB_NAME,
-    port: process.env.DB_PORT,
-    ssl: { rejectUnauthorized: false },
-    waitForConnections: true,
-    connectionLimit: 10,
-    queueLimit: 0
-});
+app.use(cors({ origin: process.env.CORS_ORIGIN || 'http://localhost:5173', credentials: true }));
+app.use(express.json());
 
-// 1. Trang chủ (Tránh lỗi Cannot GET /)
+// Kiểm tra kết nối DB khi khởi động
+const { pool, getDbPublicConfig } = require('./src/db');
+
+const verifyDatabaseConnection = async () => {
+    const conn = await pool.getConnection();
+    try {
+        await conn.ping();
+    } finally {
+        conn.release();
+    }
+};
+
+// Trang chủ
 app.get('/', (req, res) => {
-    res.send("Backend quản lý người dùng - Nhóm STU đang hoạt động!");
+    res.json({ message: 'SunnyWear API đang hoạt động!', version: '2.0' });
 });
 
-// 2. READ: Lấy danh sách toàn bộ người dùng
-app.get('/users', (req, res) => {
-    const q = "SELECT * FROM users";
-    db.query(q, (err, data) => {
-        if (err) return res.status(500).json({ error: "Lỗi truy vấn: " + err.message });
-        return res.json(data);
+app.get('/api/health/db', async (req, res) => {
+    if (USE_MOCK_DATA) {
+        return res.json({
+            ok: true,
+            mode: 'mock',
+            db: null,
+            message: 'Backend đang chạy với mock data.',
+        });
+    }
+
+    try {
+        const [rows] = await pool.query('SELECT NOW() AS now');
+        return res.json({
+            ok: true,
+            mode: 'database',
+            db: getDbPublicConfig(),
+            serverTime: rows[0]?.now || null,
+        });
+    } catch (err) {
+        return res.status(500).json({
+            ok: false,
+            mode: 'database',
+            db: getDbPublicConfig(),
+            message: 'Không thể kết nối MySQL.',
+            error: err.message,
+        });
+    }
+});
+
+// === API Routes ===
+app.use('/api/auth', require('./src/routes/auth'));
+app.use('/api/products', require('./src/routes/products'));
+app.use('/api/cart', require('./src/routes/cart'));
+app.use('/api/offers', require('./src/routes/offers'));
+app.use('/api/users', require('./src/routes/users'));
+
+// Giữ tương thích link cũ để test nhanh theo BASE_API/users
+app.use('/users', require('./src/routes/users'));
+
+// Xử lý route không tồn tại
+app.use((req, res) => {
+    res.status(404).json({ message: 'Đường dẫn không tồn tại.' });
+});
+
+const PORT = process.env.PORT || 5000;
+
+const startServer = async () => {
+    if (!USE_MOCK_DATA) {
+        try {
+            await verifyDatabaseConnection();
+            console.log('Kết nối MySQL thành công.', getDbPublicConfig());
+        } catch (err) {
+            console.error('Không thể kết nối MySQL:', err.message);
+
+            if (DB_STRICT_MODE) {
+                console.error('DB_STRICT_MODE=true nên server sẽ dừng để tránh chạy sai cấu hình.');
+                process.exit(1);
+            }
+        }
+    } else {
+        console.log('Đang chạy ở chế độ mock data (USE_MOCK_DATA=true).');
+    }
+
+    app.listen(PORT, () => {
+        console.log(`Server SunnyWear đang chạy tại http://localhost:${PORT}`);
     });
-});
+};
 
-// 3. CREATE: Thêm một người dùng mới
-app.post('/users', (req, res) => {
-    const { name, email, phone } = req.body;
-    const q = "INSERT INTO users (name, email, phone) VALUES (?, ?, ?)";
-    db.query(q, [name, email, phone], (err, result) => {
-        if (err) return res.status(500).json({ error: "Lỗi thêm dữ liệu: " + err.message });
-        return res.status(201).json({ message: "Đã thêm người dùng thành công!", id: result.insertId });
-    });
-});
-
-// 4. UPDATE: Cập nhật thông tin người dùng theo ID
-app.put('/users/:id', (req, res) => {
-    const userId = req.params.id;
-    const { name, email, phone } = req.body;
-    const q = "UPDATE users SET name = ?, email = ?, phone = ? WHERE id = ?";
-    db.query(q, [name, email, phone, userId], (err, result) => {
-        if (err) return res.status(500).json({ error: "Lỗi cập nhật: " + err.message });
-        return res.json({ message: "Đã cập nhật thông tin thành công!" });
-    });
-});
-
-// 5. DELETE: Xóa người dùng theo ID
-app.delete('/users/:id', (req, res) => {
-    const userId = req.params.id;
-    const q = "DELETE FROM users WHERE id = ?";
-    db.query(q, [userId], (err, result) => {
-        if (err) return res.status(500).json({ error: "Lỗi xóa dữ liệu: " + err.message });
-        return res.json({ message: "Đã xóa người dùng thành công!" });
-    });
-});
-
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
-    console.log(`Server đang chạy mượt mà tại port ${PORT}`);
-});
+startServer();
