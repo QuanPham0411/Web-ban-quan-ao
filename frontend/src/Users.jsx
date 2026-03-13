@@ -1,6 +1,21 @@
 import { useEffect, useState } from 'react';
 
-const USERS_API_URL = 'http://localhost:3000/api/users';
+const resolveApiBaseUrl = () => {
+  const envBaseUrl = String(import.meta.env.VITE_API_BASE_URL || '').trim().replace(/\/$/, '');
+
+  if (envBaseUrl) {
+    return envBaseUrl;
+  }
+
+  if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+    return 'http://localhost:3000';
+  }
+
+  return '';
+};
+
+const API_BASE_URL = resolveApiBaseUrl();
+const USERS_API_URL = `${API_BASE_URL}/api/users`;
 
 function Users({
   authState,

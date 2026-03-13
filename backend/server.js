@@ -5,8 +5,25 @@ const cors = require('cors');
 const app = express();
 const USE_MOCK_DATA = process.env.USE_MOCK_DATA === 'true';
 const DB_STRICT_MODE = process.env.DB_STRICT_MODE !== 'false';
+const allowedOrigins = String(process.env.CORS_ORIGIN || '')
+    .split(',')
+    .map((origin) => origin.trim())
+    .filter(Boolean);
 
-app.use(cors({ origin: process.env.CORS_ORIGIN || 'http://localhost:5173', credentials: true }));
+app.use(cors({
+    origin(origin, callback) {
+        if (!origin) {
+            return callback(null, true);
+        }
+
+        if (allowedOrigins.length === 0 || allowedOrigins.includes('*') || allowedOrigins.includes(origin)) {
+            return callback(null, true);
+        }
+
+        return callback(new Error(`Origin ${origin} không được phép bởi CORS.`));
+    },
+    credentials: true,
+}));
 app.use(express.json());
 
 // Kiểm tra kết nối DB khi khởi động
