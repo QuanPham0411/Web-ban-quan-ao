@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import CartIconButton from './components/CartIconButton';
 
-function Register({ onGoHome, onGoProducts, onGoOffers, onGoCart, onGoLogin, cartCount, onSubmit }) {
+function Register({ onGoHome, onGoProducts, onGoOffers, onGoUsers, onGoCart, onGoLogin, cartCount, onSubmit }) {
   const [form, setForm] = useState({ fullName: '', email: '', phone: '', password: '' });
 
   const handleSubmit = (e) => {
@@ -25,6 +25,9 @@ function Register({ onGoHome, onGoProducts, onGoOffers, onGoCart, onGoLogin, car
           </button>
           <button type="button" className="catalog-nav-button" onClick={onGoOffers}>
             Ưu Đãi
+          </button>
+          <button type="button" className="catalog-nav-button" onClick={onGoUsers}>
+            Users
           </button>
           <CartIconButton count={cartCount} onClick={onGoCart} />
         </nav>

@@ -38,6 +38,7 @@ function Home({
   onGoHome,
   onGoProducts,
   onGoOffers,
+  onGoUsers,
   onGoCart,
   onGoLogin,
   onGoRegister,
@@ -75,6 +76,9 @@ function Home({
           </button>
           <button type="button" onClick={onGoOffers}>
             Ưu Đãi
+          </button>
+          <button type="button" className="nav-users-pill" onClick={onGoUsers}>
+            Users
           </button>
           <CartIconButton count={cartCount} onClick={onGoCart} />
         </nav>

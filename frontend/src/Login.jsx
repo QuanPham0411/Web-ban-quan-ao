@@ -1,8 +1,8 @@
 import { useState } from 'react';
 import CartIconButton from './components/CartIconButton';
 
-function Login({ onGoHome, onGoProducts, onGoOffers, onGoCart, onGoRegister, cartCount, onSubmit }) {
-  const [form, setForm] = useState({ email: '', password: '', fullName: '' });
+function Login({ onGoHome, onGoProducts, onGoOffers, onGoUsers, onGoCart, onGoRegister, cartCount, onSubmit }) {
+  const [form, setForm] = useState({ email: '', password: '' });
 
   const handleSubmit = (e) => {
     e.preventDefault();
@@ -26,6 +26,9 @@ function Login({ onGoHome, onGoProducts, onGoOffers, onGoCart, onGoRegister, car
           <button type="button" className="catalog-nav-button" onClick={onGoOffers}>
             Ưu Đãi
           </button>
+          <button type="button" className="catalog-nav-button" onClick={onGoUsers}>
+            Users
+          </button>
           <CartIconButton count={cartCount} onClick={onGoCart} />
         </nav>
       </header>
@@ -34,15 +37,6 @@ function Login({ onGoHome, onGoProducts, onGoOffers, onGoCart, onGoRegister, car
         <form className="auth-card" onSubmit={handleSubmit}>
           <h1>Đăng nhập</h1>
           <p>Đăng nhập để lưu giỏ hàng, nhận ưu đãi và theo dõi đơn hàng.</p>
-
-          <label htmlFor="login-name">Họ và tên</label>
-          <input
-            id="login-name"
-            type="text"
-            placeholder="Nguyễn Văn A"
-            value={form.fullName}
-            onChange={(e) => setForm({ ...form, fullName: e.target.value })}
-          />
 
           <label htmlFor="login-email">Email</label>
           <input

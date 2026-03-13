@@ -74,6 +74,7 @@ function Offers({
   onGoHome,
   onGoProducts,
   onGoOffers,
+  onGoUsers,
   onGoCart,
   onGoLogin,
   onGoRegister,
@@ -95,6 +96,9 @@ function Offers({
           </button>
           <button type="button" className="catalog-nav-button is-active" onClick={onGoOffers}>
             Ưu Đãi
+          </button>
+          <button type="button" className="catalog-nav-button" onClick={onGoUsers}>
+            Users
           </button>
           <CartIconButton count={cartCount} onClick={onGoCart} />
         </nav>
