@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import CartIconButton from './components/CartIconButton';
 
 const seasonTags = ['Xuân', 'Hè', 'Thu', 'Đông', 'Premium'];
 const sizeTags = ['Size S - XL', 'Size M - 2XL', 'Size Free size', 'Size 90 - 140', 'Size tiêu chuẩn'];
@@ -151,7 +152,18 @@ const catalogProducts = categoryConfigs.flatMap((category, categoryIndex) =>
   }),
 );
 
-function Products({ authState, onLogout, onGoHome, onGoOffers, onGoLogin, onGoRegister }) {
+function Products({
+  authState,
+  onLogout,
+  onGoHome,
+  onGoOffers,
+  onGoCart,
+  onGoLogin,
+  onGoRegister,
+  onAddToCart,
+  onGoProductDetail,
+  cartCount,
+}) {
   const [activeCategory, setActiveCategory] = useState('all');
 
   const categoryFilterMap = {
@@ -190,6 +202,7 @@ function Products({ authState, onLogout, onGoHome, onGoOffers, onGoLogin, onGoRe
           <button type="button" className="catalog-nav-button" onClick={onGoOffers}>
             Ưu Đãi
           </button>
+          <CartIconButton count={cartCount} onClick={onGoCart} />
         </nav>
         <div className="auth-actions">
           {authState.isLoggedIn ? (
@@ -281,13 +294,51 @@ function Products({ authState, onLogout, onGoHome, onGoOffers, onGoLogin, onGoRe
                 <span className="catalog-category">{product.categoryLabel}</span>
                 <span className="catalog-stock">{product.stockLabel}</span>
               </div>
-              <h3 className="catalog-name">{product.name}</h3>
+              <h3 className="catalog-name">
+                <button
+                  type="button"
+                  className="catalog-name-button"
+                  onClick={() =>
+                    onGoProductDetail({
+                      id: product.id,
+                      name: product.name,
+                      priceNumber: Number(product.price.replace(/\./g, '')),
+                      priceText: `${product.price}đ`,
+                      image: product.image,
+                      size: product.size,
+                      stockLabel: product.stockLabel,
+                      categoryLabel: product.categoryLabel,
+                      description: product.description,
+                    })
+                  }
+                >
+                  {product.name}
+                </button>
+              </h3>
               <p className="catalog-desc">{product.description}</p>
               <div className="catalog-price-row">
                 <span className="catalog-price">{product.price}đ</span>
                 <span className="catalog-size">{product.size}</span>
               </div>
-              <button className="catalog-button">Thêm vào giỏ</button>
+              <button
+                className="catalog-button"
+                disabled={!authState.isLoggedIn}
+                onClick={() =>
+                  onAddToCart({
+                    id: product.id,
+                    name: product.name,
+                    priceNumber: Number(product.price.replace(/\./g, '')),
+                    priceText: `${product.price}đ`,
+                    image: product.image,
+                    size: product.size,
+                    stockLabel: product.stockLabel,
+                    categoryLabel: product.categoryLabel,
+                    description: product.description,
+                  })
+                }
+              >
+                {authState.isLoggedIn ? 'Thêm vào giỏ' : 'Chỉ xem - cần đăng nhập'}
+              </button>
             </div>
           </article>
         ))}

@@ -1,13 +1,17 @@
-import { useEffect, useState } from 'react';
+﻿import { useEffect, useState } from 'react';
 import Home from './Home';
 import Products from './Products';
 import Offers from './Offers';
 import Login from './Login';
 import Register from './Register';
+import Cart from './Cart';
+import ProductDetail from './ProductDetail';
 import './styles/App.css';
 
 const AUTH_STORAGE_KEY = 'sunnywear-auth';
 const LAST_VISIT_STORAGE_KEY = 'sunnywear-last-visit';
+const CART_STORAGE_KEY = 'sunnywear-cart';
+const PRODUCT_DETAIL_STORAGE_KEY = 'sunnywear-product-detail';
 const AUTO_LOGOUT_DAYS = 5;
 const AUTO_LOGOUT_MS = AUTO_LOGOUT_DAYS * 24 * 60 * 60 * 1000;
 
@@ -28,7 +32,61 @@ const getCurrentPage = () => {
     return 'register';
   }
 
+  if (window.location.hash.startsWith('#cart')) {
+    return 'cart';
+  }
+
+  if (window.location.hash.startsWith('#product/')) {
+    return 'product-detail';
+  }
+
   return 'home';
+};
+
+const getCurrentProductId = () => {
+  const hashValue = window.location.hash || '';
+
+  if (!hashValue.startsWith('#product/')) {
+    return null;
+  }
+
+  return hashValue.slice('#product/'.length) || null;
+};
+
+const getInitialCartItems = () => {
+  const savedCart = localStorage.getItem(CART_STORAGE_KEY);
+
+  if (!savedCart) {
+    return [];
+  }
+
+  try {
+    const parsedCart = JSON.parse(savedCart);
+
+    if (!Array.isArray(parsedCart)) {
+      return [];
+    }
+
+    return parsedCart.filter((item) => item && item.id && Number(item.quantity) > 0);
+  } catch {
+    localStorage.removeItem(CART_STORAGE_KEY);
+    return [];
+  }
+};
+
+const getInitialSelectedProduct = () => {
+  const savedProduct = localStorage.getItem(PRODUCT_DETAIL_STORAGE_KEY);
+
+  if (!savedProduct) {
+    return null;
+  }
+
+  try {
+    return JSON.parse(savedProduct);
+  } catch {
+    localStorage.removeItem(PRODUCT_DETAIL_STORAGE_KEY);
+    return null;
+  }
 };
 
 const getInitialAuthState = () => {
@@ -60,6 +118,12 @@ const getInitialAuthState = () => {
 function App() {
   const [page, setPage] = useState(getCurrentPage);
   const [authState, setAuthState] = useState(getInitialAuthState);
+  const [cartItems, setCartItems] = useState(getInitialCartItems);
+  const [selectedProduct, setSelectedProduct] = useState(getInitialSelectedProduct);
+
+  useEffect(() => {
+    localStorage.setItem(CART_STORAGE_KEY, JSON.stringify(cartItems));
+  }, [cartItems]);
 
   useEffect(() => {
     const handleHashChange = () => {
@@ -151,6 +215,71 @@ function App() {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
+  const handleGoCart = () => {
+    window.location.hash = '#cart';
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const handleGoProductDetail = (product) => {
+    setSelectedProduct(product);
+    localStorage.setItem(PRODUCT_DETAIL_STORAGE_KEY, JSON.stringify(product));
+    window.location.hash = `#product/${product.id}`;
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const handleAddToCart = (product) => {
+    if (!authState.isLoggedIn) {
+      return;
+    }
+
+    setCartItems((previous) => {
+      const existingItem = previous.find((item) => item.id === product.id);
+
+      if (existingItem) {
+        return previous.map((item) =>
+          item.id === product.id
+            ? {
+                ...item,
+                quantity: item.quantity + 1,
+              }
+            : item,
+        );
+      }
+
+      return [
+        ...previous,
+        {
+          ...product,
+          quantity: 1,
+        },
+      ];
+    });
+  };
+
+  const handleUpdateCartQuantity = (productId, nextQuantity) => {
+    if (nextQuantity <= 0) {
+      setCartItems((previous) => previous.filter((item) => item.id !== productId));
+      return;
+    }
+
+    setCartItems((previous) =>
+      previous.map((item) =>
+        item.id === productId
+          ? {
+              ...item,
+              quantity: nextQuantity,
+            }
+          : item,
+      ),
+    );
+  };
+
+  const handleRemoveFromCart = (productId) => {
+    setCartItems((previous) => previous.filter((item) => item.id !== productId));
+  };
+
+  const totalCartItems = cartItems.reduce((total, item) => total + item.quantity, 0);
+
   if (page === 'products') {
     return (
       <Products
@@ -158,8 +287,12 @@ function App() {
         onLogout={handleLogout}
         onGoHome={handleGoHome}
         onGoOffers={handleGoOffers}
+        onGoCart={handleGoCart}
         onGoLogin={handleGoLogin}
         onGoRegister={handleGoRegister}
+        onAddToCart={handleAddToCart}
+        onGoProductDetail={handleGoProductDetail}
+        cartCount={totalCartItems}
       />
     );
   }
@@ -172,8 +305,10 @@ function App() {
         onGoHome={handleGoHome}
         onGoProducts={handleGoProducts}
         onGoOffers={handleGoOffers}
+        onGoCart={handleGoCart}
         onGoLogin={handleGoLogin}
         onGoRegister={handleGoRegister}
+        cartCount={totalCartItems}
       />
     );
   }
@@ -184,7 +319,9 @@ function App() {
         onGoHome={handleGoHome}
         onGoProducts={handleGoProducts}
         onGoOffers={handleGoOffers}
+        onGoCart={handleGoCart}
         onGoRegister={handleGoRegister}
+        cartCount={totalCartItems}
         onSubmit={handleLoginSubmit}
       />
     );
@@ -196,8 +333,47 @@ function App() {
         onGoHome={handleGoHome}
         onGoProducts={handleGoProducts}
         onGoOffers={handleGoOffers}
+        onGoCart={handleGoCart}
         onGoLogin={handleGoLogin}
+        cartCount={totalCartItems}
         onSubmit={handleRegisterSubmit}
+      />
+    );
+  }
+
+  if (page === 'cart') {
+    return (
+      <Cart
+        authState={authState}
+        cartItems={cartItems}
+        onUpdateCartQuantity={handleUpdateCartQuantity}
+        onRemoveFromCart={handleRemoveFromCart}
+        onLogout={handleLogout}
+        onGoHome={handleGoHome}
+        onGoProducts={handleGoProducts}
+        onGoOffers={handleGoOffers}
+        onGoCart={handleGoCart}
+        onGoLogin={handleGoLogin}
+        onGoRegister={handleGoRegister}
+      />
+    );
+  }
+
+  if (page === 'product-detail') {
+    return (
+      <ProductDetail
+        authState={authState}
+        product={selectedProduct}
+        currentProductId={getCurrentProductId()}
+        cartCount={totalCartItems}
+        onAddToCart={handleAddToCart}
+        onLogout={handleLogout}
+        onGoHome={handleGoHome}
+        onGoProducts={handleGoProducts}
+        onGoOffers={handleGoOffers}
+        onGoCart={handleGoCart}
+        onGoLogin={handleGoLogin}
+        onGoRegister={handleGoRegister}
       />
     );
   }
@@ -209,8 +385,11 @@ function App() {
       onGoHome={handleGoHome}
       onGoProducts={handleGoProducts}
       onGoOffers={handleGoOffers}
+      onGoCart={handleGoCart}
       onGoLogin={handleGoLogin}
       onGoRegister={handleGoRegister}
+      onAddToCart={handleAddToCart}
+      cartCount={totalCartItems}
     />
   );
 }

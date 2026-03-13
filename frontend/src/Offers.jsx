@@ -1,3 +1,5 @@
+import CartIconButton from './components/CartIconButton';
+
 const offers = [
   {
     id: 1,
@@ -66,7 +68,17 @@ const vouchers = [
   { code: 'VIP50', discount: 'Giảm 50.000đ', rule: 'Cho thành viên VIP' },
 ];
 
-function Offers({ authState, onLogout, onGoHome, onGoProducts, onGoOffers, onGoLogin, onGoRegister }) {
+function Offers({
+  authState,
+  onLogout,
+  onGoHome,
+  onGoProducts,
+  onGoOffers,
+  onGoCart,
+  onGoLogin,
+  onGoRegister,
+  cartCount,
+}) {
   return (
     <div className="offers-page">
       <header className="top-header offers-header">
@@ -84,6 +96,7 @@ function Offers({ authState, onLogout, onGoHome, onGoProducts, onGoOffers, onGoL
           <button type="button" className="catalog-nav-button is-active" onClick={onGoOffers}>
             Ưu Đãi
           </button>
+          <CartIconButton count={cartCount} onClick={onGoCart} />
         </nav>
 
         <div className="auth-actions">

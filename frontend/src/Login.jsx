@@ -1,6 +1,7 @@
 import { useState } from 'react';
+import CartIconButton from './components/CartIconButton';
 
-function Login({ onGoHome, onGoProducts, onGoOffers, onGoRegister, onSubmit }) {
+function Login({ onGoHome, onGoProducts, onGoOffers, onGoCart, onGoRegister, cartCount, onSubmit }) {
   const [form, setForm] = useState({ email: '', password: '', fullName: '' });
 
   const handleSubmit = (e) => {
@@ -25,6 +26,7 @@ function Login({ onGoHome, onGoProducts, onGoOffers, onGoRegister, onSubmit }) {
           <button type="button" className="catalog-nav-button" onClick={onGoOffers}>
             Ưu Đãi
           </button>
+          <CartIconButton count={cartCount} onClick={onGoCart} />
         </nav>
       </header>
 
