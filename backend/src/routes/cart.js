@@ -1,10 +1,10 @@
 const express = require('express');
 const { pool } = require('../db');
 const authMiddleware = require('../middleware/authMiddleware');
-const mockStore = require('../mockStore');
 
 const router = express.Router();
 const USE_MOCK_DATA = process.env.USE_MOCK_DATA === 'true';
+const mockStore = USE_MOCK_DATA ? require('../mockStore') : null;
 
 // Tất cả route giỏ hàng đều yêu cầu đăng nhập
 router.use(authMiddleware);

@@ -3,11 +3,11 @@ const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const { pool } = require('../db');
 const authMiddleware = require('../middleware/authMiddleware');
-const mockStore = require('../mockStore');
 
 const router = express.Router();
 const JWT_SECRET = process.env.JWT_SECRET || 'sunnywear_secret_key';
 const USE_MOCK_DATA = process.env.USE_MOCK_DATA === 'true';
+const mockStore = USE_MOCK_DATA ? require('../mockStore') : null;
 
 // POST /api/auth/register
 router.post('/register', async (req, res) => {

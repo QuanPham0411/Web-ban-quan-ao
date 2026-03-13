@@ -1,9 +1,9 @@
 const express = require('express');
 const { pool } = require('../db');
-const mockStore = require('../mockStore');
 
 const router = express.Router();
 const USE_MOCK_DATA = process.env.USE_MOCK_DATA === 'true';
+const mockStore = USE_MOCK_DATA ? require('../mockStore') : null;
 
 // GET /api/offers — danh sách ưu đãi đang hoạt động
 router.get('/', async (req, res) => {
