@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react';
 
+const PRODUCTION_API_BASE_URL = 'https://api-ban-quan-ao-backend.onrender.com';
+
 const resolveApiBaseUrl = () => {
   const envBaseUrl = String(import.meta.env.VITE_API_BASE_URL || '').trim().replace(/\/$/, '');
 
@@ -11,7 +13,7 @@ const resolveApiBaseUrl = () => {
     return 'http://localhost:3000';
   }
 
-  return '';
+  return PRODUCTION_API_BASE_URL;
 };
 
 const API_BASE_URL = resolveApiBaseUrl();
