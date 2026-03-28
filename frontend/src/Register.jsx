@@ -1,12 +1,25 @@
 import { useState } from 'react';
 import CartIconButton from './components/CartIconButton';
 
+const normalizePhoneInput = (value) => String(value || '').replace(/\D/g, '').slice(0, 10);
+const isValidPhone = (value) => /^\d{10}$/.test(String(value || ''));
+
 function Register({ onGoHome, onGoProducts, onGoOffers, onGoUsers, onGoCart, onGoLogin, cartCount, onSubmit }) {
   const [form, setForm] = useState({ fullName: '', email: '', phone: '', password: '' });
+  const [phoneError, setPhoneError] = useState('');
 
   const handleSubmit = (e) => {
     e.preventDefault();
+    if (!isValidPhone(form.phone)) {
+      setPhoneError('Số điện thoại phải đủ 10 số và không chứa ký tự khác.');
+      return;
+    }
     onSubmit(form);
+  };
+
+  const handlePhoneChange = (value) => {
+    setForm({ ...form, phone: normalizePhoneInput(value) });
+    setPhoneError('');
   };
 
   return (
@@ -64,9 +77,13 @@ function Register({ onGoHome, onGoProducts, onGoOffers, onGoUsers, onGoCart, onG
             type="tel"
             placeholder="09xxxxxxxx"
             required
+            inputMode="numeric"
+            pattern="[0-9]{10}"
+            maxLength={10}
             value={form.phone}
-            onChange={(e) => setForm({ ...form, phone: e.target.value })}
+            onChange={(e) => handlePhoneChange(e.target.value)}
           />
+          {phoneError ? <p className="auth-form-error">{phoneError}</p> : null}
 
           <label htmlFor="register-password">Mật khẩu</label>
           <input

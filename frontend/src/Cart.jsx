@@ -7,10 +7,12 @@ function Cart({
   cartItems,
   onUpdateCartQuantity,
   onRemoveFromCart,
+  onGoCheckout,
   onLogout,
   onGoHome,
   onGoProducts,
   onGoOffers,
+  onGoOrders,
   onGoCart,
   onGoLogin,
   onGoRegister,
@@ -34,6 +36,9 @@ function Cart({
           </button>
           <button type="button" className="catalog-nav-button" onClick={onGoOffers}>
             Ưu Đãi
+          </button>
+          <button type="button" className="catalog-nav-button" onClick={onGoOrders}>
+            Đơn hàng
           </button>
           <CartIconButton count={totalItems} onClick={onGoCart} isActive />
         </nav>
@@ -133,6 +138,9 @@ function Cart({
             </p>
             <button type="button" className="btn-register" onClick={onGoProducts}>
               Tiếp tục mua sắm
+            </button>
+            <button type="button" className="btn-primary" onClick={onGoCheckout}>
+              Thanh toán
             </button>
           </aside>
         </section>

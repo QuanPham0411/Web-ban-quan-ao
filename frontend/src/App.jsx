@@ -4,6 +4,8 @@ import Home from './Home';
 import Products from './Products';
 import Offers from './Offers';
 import Users from './Users';
+import Orders from './Orders';
+import Checkout from './Checkout';
 import Login from './Login';
 import Register from './Register';
 import Cart from './Cart';
@@ -19,6 +21,8 @@ const PRODUCT_DETAIL_STORAGE_KEY = 'sunnywear-product-detail';
 const ADMIN_AUTH_STORAGE_KEY = 'sunnywear-admin-auth';
 const CUSTOMERS_STORAGE_KEY = 'sunnywear-customers';
 const ORDERS_STORAGE_KEY = 'sunnywear-orders';
+const PROMOTIONS_STORAGE_KEY = 'sunnywear-promotions';
+const VOUCHERS_STORAGE_KEY = 'sunnywear-vouchers';
 const AUTO_LOGOUT_DAYS = 5;
 const AUTO_LOGOUT_MS = AUTO_LOGOUT_DAYS * 24 * 60 * 60 * 1000;
 const ADMIN_EMAIL = 'admin@sunnywear.com';
@@ -64,6 +68,10 @@ const getCurrentPage = () => {
     return 'users';
   }
 
+  if (window.location.hash.startsWith('#orders')) {
+    return 'orders';
+  }
+
   if (window.location.hash.startsWith('#login')) {
     return 'login';
   }
@@ -74,6 +82,10 @@ const getCurrentPage = () => {
 
   if (window.location.hash.startsWith('#cart')) {
     return 'cart';
+  }
+
+  if (window.location.hash.startsWith('#checkout')) {
+    return 'checkout';
   }
 
   if (window.location.hash.startsWith('#product/')) {
@@ -201,6 +213,38 @@ const getInitialOrders = () => {
   }
 };
 
+const getInitialPromotions = () => {
+  const savedPromotions = localStorage.getItem(PROMOTIONS_STORAGE_KEY);
+
+  if (!savedPromotions) {
+    return [];
+  }
+
+  try {
+    const parsed = JSON.parse(savedPromotions);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    localStorage.removeItem(PROMOTIONS_STORAGE_KEY);
+    return [];
+  }
+};
+
+const getInitialVouchers = () => {
+  const savedVouchers = localStorage.getItem(VOUCHERS_STORAGE_KEY);
+
+  if (!savedVouchers) {
+    return [];
+  }
+
+  try {
+    const parsed = JSON.parse(savedVouchers);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    localStorage.removeItem(VOUCHERS_STORAGE_KEY);
+    return [];
+  }
+};
+
 const getInitialAuthState = () => {
   const now = Date.now();
   const lastVisitValue = localStorage.getItem(LAST_VISIT_STORAGE_KEY);
@@ -209,7 +253,7 @@ const getInitialAuthState = () => {
 
   if (lastVisit && now - lastVisit > AUTO_LOGOUT_MS) {
     localStorage.removeItem(AUTH_STORAGE_KEY);
-    return { isLoggedIn: false, accountLabel: 'Khách hàng' };
+    return { isLoggedIn: false, accountLabel: 'Khách hàng', email: '' };
   }
 
   if (savedAuth) {
@@ -218,13 +262,14 @@ const getInitialAuthState = () => {
       return {
         isLoggedIn: true,
         accountLabel: parsedAuth.label || 'Khách hàng',
+        email: parsedAuth.email || '',
       };
     } catch {
       localStorage.removeItem(AUTH_STORAGE_KEY);
     }
   }
 
-  return { isLoggedIn: false, accountLabel: 'Khách hàng' };
+  return { isLoggedIn: false, accountLabel: 'Khách hàng', email: '' };
 };
 
 function App() {
@@ -236,6 +281,9 @@ function App() {
   const [sharedProducts, setSharedProducts] = useState(initialProducts);
   const [sharedCustomers, setSharedCustomers] = useState(getInitialCustomers);
   const [sharedOrders, setSharedOrders] = useState(getInitialOrders);
+  const [sharedPromotions, setSharedPromotions] = useState(getInitialPromotions);
+  const [sharedVouchers, setSharedVouchers] = useState(getInitialVouchers);
+  const [latestOrderId, setLatestOrderId] = useState('');
 
   useEffect(() => {
     localStorage.setItem(CART_STORAGE_KEY, JSON.stringify(cartItems));
@@ -248,6 +296,14 @@ function App() {
   useEffect(() => {
     localStorage.setItem(ORDERS_STORAGE_KEY, JSON.stringify(sharedOrders));
   }, [sharedOrders]);
+
+  useEffect(() => {
+    localStorage.setItem(PROMOTIONS_STORAGE_KEY, JSON.stringify(sharedPromotions));
+  }, [sharedPromotions]);
+
+  useEffect(() => {
+    localStorage.setItem(VOUCHERS_STORAGE_KEY, JSON.stringify(sharedVouchers));
+  }, [sharedVouchers]);
 
   useEffect(() => {
     const handleHashChange = () => {
@@ -271,7 +327,7 @@ function App() {
 
     localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(authData));
     localStorage.setItem(LAST_VISIT_STORAGE_KEY, String(Date.now()));
-    setAuthState({ isLoggedIn: true, accountLabel: authData.label });
+    setAuthState({ isLoggedIn: true, accountLabel: authData.label, email: '' });
   };
 
   const upsertCustomer = ({ email, name }) => {
@@ -330,10 +386,11 @@ function App() {
       ...parsedAuth,
       label,
       mode: 'login',
+      email: normalizedEmail,
     };
 
     localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(authData));
-    setAuthState({ isLoggedIn: true, accountLabel: authData.label });
+    setAuthState({ isLoggedIn: true, accountLabel: authData.label, email: normalizedEmail });
     handleGoHome();
   };
 
@@ -348,17 +405,20 @@ function App() {
       ...parsedAuth,
       label,
       mode: 'register',
+      email: normalizeEmail(email),
     };
 
     localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(authData));
-    setAuthState({ isLoggedIn: true, accountLabel: authData.label });
+    setAuthState({ isLoggedIn: true, accountLabel: authData.label, email: normalizeEmail(email) });
     handleGoHome();
   };
 
   const handleLogout = () => {
     localStorage.removeItem(AUTH_STORAGE_KEY);
+    localStorage.removeItem(CART_STORAGE_KEY);
     localStorage.setItem(LAST_VISIT_STORAGE_KEY, String(Date.now()));
-    setAuthState({ isLoggedIn: false, accountLabel: 'Khách hàng' });
+    setAuthState({ isLoggedIn: false, accountLabel: 'Khách hàng', email: '' });
+    setCartItems([]);
   };
 
   const handleGoHome = () => {
@@ -381,6 +441,11 @@ function App() {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
+  const handleGoOrders = () => {
+    window.location.hash = '#orders';
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
   const handleGoLogin = () => {
     window.location.hash = '#login';
     window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -394,6 +459,85 @@ function App() {
   const handleGoCart = () => {
     window.location.hash = '#cart';
     window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const handleGoCheckout = () => {
+    window.location.hash = '#checkout';
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const handlePlaceOrder = (checkoutData) => {
+    if (!authState.isLoggedIn || cartItems.length === 0) {
+      return;
+    }
+
+    const totalPrice = cartItems.reduce((total, item) => total + item.priceNumber * item.quantity, 0);
+    const discountAmount = Math.min(Number(checkoutData?.discountAmount || 0), totalPrice);
+    const finalTotal = Math.max(0, Number(checkoutData?.finalTotal || totalPrice - discountAmount));
+    const orderId = `ORD-${Date.now().toString().slice(-6)}`;
+    const orderItems = cartItems.map((item) => ({
+      id: item.id,
+      name: item.name,
+      quantity: Number(item.quantity || 0),
+      priceNumber: Number(item.priceNumber || 0),
+      priceText: item.priceText || `${Number(item.priceNumber || 0).toLocaleString('vi-VN')}đ`,
+    }));
+    const productLabel =
+      cartItems.length === 1
+        ? cartItems[0].name
+        : `${cartItems[0].name} (+${cartItems.length - 1} sản phẩm)`;
+
+    const order = {
+      id: orderId,
+      customer: authState.accountLabel,
+      customerEmail: normalizeEmail(authState.email),
+      fullName: checkoutData?.fullName || authState.accountLabel,
+      phone: checkoutData?.phone || '',
+      address: checkoutData?.address || '',
+      paymentMethod: checkoutData?.paymentMethod || 'cod',
+      note: checkoutData?.note || '',
+      items: orderItems,
+      product: productLabel,
+      amount: `${finalTotal.toLocaleString('vi-VN')}đ`,
+      status: 'Chờ xác nhận',
+      date: formatDate(new Date()),
+      voucherCode: checkoutData?.voucherCode || '',
+      promotionTitle: checkoutData?.promotionTitle || '',
+      createdAt: Date.now(),
+    };
+
+    setSharedOrders((prev) => [order, ...prev]);
+    setLatestOrderId(orderId);
+    setCartItems([]);
+
+    if (authState.email) {
+      const normalized = normalizeEmail(authState.email);
+      setSharedCustomers((prev) =>
+        prev.map((customer) =>
+          normalizeEmail(customer.email) === normalized
+            ? { ...customer, orders: Number(customer.orders || 0) + 1 }
+            : customer,
+        ),
+      );
+    }
+  };
+
+  const handleCustomerCancelOrder = (orderId) => {
+    setSharedOrders((previous) =>
+      previous.map((order) =>
+        order.id === orderId
+          ? {
+              ...order,
+              status: 'Đã huỷ',
+              cancelledBy: 'customer',
+            }
+          : order,
+      ),
+    );
+  };
+
+  const handleAdminDeleteOrder = (orderId) => {
+    setSharedOrders((previous) => previous.filter((order) => order.id !== orderId));
   };
 
   const handleAdminLoginSubmit = ({ email, password }) => {
@@ -475,6 +619,7 @@ function App() {
   };
 
   const totalCartItems = cartItems.reduce((total, item) => total + item.quantity, 0);
+  const visibleCartCount = authState.isLoggedIn ? totalCartItems : 0;
 
   if (page === 'products') {
     return (
@@ -485,11 +630,12 @@ function App() {
         onGoOffers={handleGoOffers}
         onGoCart={handleGoCart}
         onGoUsers={handleGoUsers}
+        onGoOrders={handleGoOrders}
         onGoLogin={handleGoLogin}
         onGoRegister={handleGoRegister}
         onAddToCart={handleAddToCart}
         onGoProductDetail={handleGoProductDetail}
-        cartCount={totalCartItems}
+        cartCount={visibleCartCount}
         products={sharedProducts}
       />
     );
@@ -504,10 +650,13 @@ function App() {
         onGoProducts={handleGoProducts}
         onGoOffers={handleGoOffers}
         onGoUsers={handleGoUsers}
+        onGoOrders={handleGoOrders}
         onGoCart={handleGoCart}
         onGoLogin={handleGoLogin}
         onGoRegister={handleGoRegister}
-        cartCount={totalCartItems}
+        cartCount={visibleCartCount}
+        promotions={sharedPromotions}
+        vouchers={sharedVouchers}
       />
     );
   }
@@ -519,9 +668,10 @@ function App() {
         onGoProducts={handleGoProducts}
         onGoOffers={handleGoOffers}
         onGoUsers={handleGoUsers}
+        onGoOrders={handleGoOrders}
         onGoCart={handleGoCart}
         onGoRegister={handleGoRegister}
-        cartCount={totalCartItems}
+        cartCount={visibleCartCount}
         onSubmit={handleLoginSubmit}
       />
     );
@@ -534,9 +684,10 @@ function App() {
         onGoProducts={handleGoProducts}
         onGoOffers={handleGoOffers}
         onGoUsers={handleGoUsers}
+        onGoOrders={handleGoOrders}
         onGoCart={handleGoCart}
         onGoLogin={handleGoLogin}
-        cartCount={totalCartItems}
+        cartCount={visibleCartCount}
         onSubmit={handleRegisterSubmit}
       />
     );
@@ -551,10 +702,31 @@ function App() {
         onGoProducts={handleGoProducts}
         onGoOffers={handleGoOffers}
         onGoUsers={handleGoUsers}
+        onGoOrders={handleGoOrders}
         onGoCart={handleGoCart}
         onGoLogin={handleGoLogin}
         onGoRegister={handleGoRegister}
-        cartCount={totalCartItems}
+        cartCount={visibleCartCount}
+      />
+    );
+  }
+
+  if (page === 'orders') {
+    return (
+      <Orders
+        authState={authState}
+        orders={sharedOrders}
+        onCancelOrder={handleCustomerCancelOrder}
+        onLogout={handleLogout}
+        onGoHome={handleGoHome}
+        onGoProducts={handleGoProducts}
+        onGoOffers={handleGoOffers}
+        onGoUsers={handleGoUsers}
+        onGoOrders={handleGoOrders}
+        onGoCart={handleGoCart}
+        onGoLogin={handleGoLogin}
+        onGoRegister={handleGoRegister}
+        cartCount={visibleCartCount}
       />
     );
   }
@@ -566,13 +738,38 @@ function App() {
         cartItems={cartItems}
         onUpdateCartQuantity={handleUpdateCartQuantity}
         onRemoveFromCart={handleRemoveFromCart}
+        onGoCheckout={handleGoCheckout}
         onLogout={handleLogout}
         onGoHome={handleGoHome}
         onGoProducts={handleGoProducts}
         onGoOffers={handleGoOffers}
+        onGoOrders={handleGoOrders}
         onGoCart={handleGoCart}
         onGoLogin={handleGoLogin}
         onGoRegister={handleGoRegister}
+      />
+    );
+  }
+
+  if (page === 'checkout') {
+    return (
+      <Checkout
+        authState={authState}
+        cartItems={cartItems}
+        latestOrderId={latestOrderId}
+        onPlaceOrder={handlePlaceOrder}
+        onLogout={handleLogout}
+        onGoHome={handleGoHome}
+        onGoProducts={handleGoProducts}
+        onGoOffers={handleGoOffers}
+        onGoUsers={handleGoUsers}
+        onGoOrders={handleGoOrders}
+        onGoCart={handleGoCart}
+        onGoLogin={handleGoLogin}
+        onGoRegister={handleGoRegister}
+        cartCount={visibleCartCount}
+        promotions={sharedPromotions}
+        vouchers={sharedVouchers}
       />
     );
   }
@@ -583,7 +780,7 @@ function App() {
         authState={authState}
         product={selectedProduct}
         currentProductId={getCurrentProductId()}
-        cartCount={totalCartItems}
+        cartCount={visibleCartCount}
         onAddToCart={handleAddToCart}
         onLogout={handleLogout}
         onGoHome={handleGoHome}
@@ -598,7 +795,7 @@ function App() {
 
   if (page === 'admin-login') {
     if (adminAuth.isAdmin) {
-      return <Admin adminAuth={adminAuth} onAdminLogout={handleAdminLogout} products={sharedProducts} onSetProducts={setSharedProducts} customers={sharedCustomers} orders={sharedOrders} onSetOrders={setSharedOrders} />;
+      return <Admin adminAuth={adminAuth} onAdminLogout={handleAdminLogout} products={sharedProducts} onSetProducts={setSharedProducts} customers={sharedCustomers} orders={sharedOrders} onSetOrders={setSharedOrders} onDeleteOrder={handleAdminDeleteOrder} promotions={sharedPromotions} onSetPromotions={setSharedPromotions} vouchers={sharedVouchers} onSetVouchers={setSharedVouchers} />;
     }
 
     return <AdminLogin onAdminLoginSubmit={handleAdminLoginSubmit} onGoHome={handleGoHome} />;
@@ -609,7 +806,7 @@ function App() {
       return <AdminLogin onAdminLoginSubmit={handleAdminLoginSubmit} onGoHome={handleGoHome} />;
     }
 
-    return <Admin adminAuth={adminAuth} onAdminLogout={handleAdminLogout} products={sharedProducts} onSetProducts={setSharedProducts} customers={sharedCustomers} orders={sharedOrders} onSetOrders={setSharedOrders} />;
+    return <Admin adminAuth={adminAuth} onAdminLogout={handleAdminLogout} products={sharedProducts} onSetProducts={setSharedProducts} customers={sharedCustomers} orders={sharedOrders} onSetOrders={setSharedOrders} onDeleteOrder={handleAdminDeleteOrder} promotions={sharedPromotions} onSetPromotions={setSharedPromotions} vouchers={sharedVouchers} onSetVouchers={setSharedVouchers} />;
   }
 
   return (
@@ -620,11 +817,12 @@ function App() {
       onGoProducts={handleGoProducts}
       onGoOffers={handleGoOffers}
       onGoUsers={handleGoUsers}
+      onGoOrders={handleGoOrders}
       onGoCart={handleGoCart}
       onGoLogin={handleGoLogin}
       onGoRegister={handleGoRegister}
       onAddToCart={handleAddToCart}
-      cartCount={totalCartItems}
+      cartCount={visibleCartCount}
     />
   );
 }

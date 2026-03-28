@@ -20,6 +20,7 @@ const ORDER_ACTIONS = [
 const TAB_LABELS = {
   dashboard: 'Dashboard',
   products: 'Sản phẩm',
+  offers: 'Ưu đãi',
   orders: 'Đơn hàng',
   customers: 'Khách hàng',
 };
@@ -57,6 +58,53 @@ const parsePriceInput = (value) => {
 };
 
 const parseAmount = (amount) => Number(String(amount || '').replace(/\D/g, ''));
+
+const getOrderItems = (order) => {
+  if (Array.isArray(order.items) && order.items.length > 0) {
+    return order.items;
+  }
+
+  if (order.product) {
+    return [{ id: order.id, name: order.product, quantity: 1 }];
+  }
+
+  return [];
+};
+
+function OrderItemsCell({ order }) {
+  const items = getOrderItems(order);
+  const groupedItems = items.reduce((accumulator, item) => {
+    const key = String(item.name || '').trim();
+    if (!key) {
+      return accumulator;
+    }
+
+    const existing = accumulator.find((entry) => entry.name === key);
+    if (existing) {
+      existing.quantity += Number(item.quantity || 0);
+      return accumulator;
+    }
+
+    accumulator.push({
+      name: key,
+      quantity: Number(item.quantity || 0),
+    });
+    return accumulator;
+  }, []);
+
+  return (
+    <div className="admin-order-product-list">
+      {groupedItems.map((item, index) => (
+        <div key={`${order.id}-${item.name}-${index}`} className="admin-order-product-item">
+          <span>
+            {item.name}
+            {Number(item.quantity || 0) > 1 ? ` (SL: ${item.quantity})` : ''}
+          </span>
+        </div>
+      ))}
+    </div>
+  );
+}
 
 function StatCard({ label, value, colorClass, icon }) {
   return (
@@ -142,7 +190,7 @@ function DashboardTab({ orders, products, customers }) {
                 <tr key={order.id}>
                   <td className="admin-td-id">{order.id}</td>
                   <td>{order.customer}</td>
-                  <td>{order.product}</td>
+                  <td><OrderItemsCell order={order} /></td>
                   <td className="admin-td-amount">{order.amount}</td>
                   <td>
                     <span className={`admin-status-badge ${ORDER_STATUS_CLASS[order.status] ?? 'admin-status-pending'}`}>
@@ -316,11 +364,12 @@ function ProductsTab({
   );
 }
 
-function OrdersTab({ orders, onUpdateOrderStatus }) {
+function OrdersTab({ orders, onUpdateOrderStatus, onDeleteOrder }) {
   const canConfirmOrder = (status) => !['Đã giao', 'Đã huỷ', 'Đang giao', 'Đã xác nhận'].includes(status);
   const canShipOrder = (status) => !['Đã giao', 'Đã huỷ', 'Đang giao'].includes(status);
   const canDeliverOrder = (status) => !['Đã giao', 'Đã huỷ'].includes(status);
   const canCancelOrder = (status) => !['Đã giao', 'Đã huỷ'].includes(status);
+  const canDeleteOrder = (status) => status === 'Đã huỷ';
 
   const isActionDisabled = (actionKey, status) => {
     if (actionKey === 'confirm') return !canConfirmOrder(status);
@@ -328,6 +377,18 @@ function OrdersTab({ orders, onUpdateOrderStatus }) {
     if (actionKey === 'delivered') return !canDeliverOrder(status);
     if (actionKey === 'cancel') return !canCancelOrder(status);
     return false;
+  };
+
+  const handleDeleteOrder = (order) => {
+    const confirmed = window.confirm(
+      `Bạn có chắc muốn xóa hẳn đơn ${order.id} không?\nSau khi xóa, đơn sẽ biến mất khỏi Dashboard và danh sách đơn hàng.`,
+    );
+
+    if (!confirmed) {
+      return;
+    }
+
+    onDeleteOrder(order.id);
   };
 
   return (
@@ -353,7 +414,7 @@ function OrdersTab({ orders, onUpdateOrderStatus }) {
               <tr key={order.id}>
                 <td className="admin-td-id">{order.id}</td>
                 <td>{order.customer}</td>
-                <td>{order.product}</td>
+                <td><OrderItemsCell order={order} /></td>
                 <td className="admin-td-amount">{order.amount}</td>
                 <td>
                   <span className={`admin-status-badge ${ORDER_STATUS_CLASS[order.status] ?? 'admin-status-pending'}`}>
@@ -374,6 +435,15 @@ function OrdersTab({ orders, onUpdateOrderStatus }) {
                         {action.label}
                       </button>
                     ))}
+                    {canDeleteOrder(order.status) ? (
+                      <button
+                        type="button"
+                        className="admin-order-action-btn admin-order-action-delete"
+                        onClick={() => handleDeleteOrder(order)}
+                      >
+                        Xóa đơn
+                      </button>
+                    ) : null}
                   </div>
                 </td>
               </tr>
@@ -421,12 +491,172 @@ function CustomersTab({ customers }) {
   );
 }
 
-const NAV_TABS = ['dashboard', 'products', 'orders', 'customers'];
+function OffersTab({
+  promotions,
+  vouchers,
+  promotionDraft,
+  voucherDraft,
+  editingPromotionId,
+  editingVoucherId,
+  onPromotionDraftChange,
+  onVoucherDraftChange,
+  onSubmitPromotion,
+  onSubmitVoucher,
+  onEditPromotion,
+  onEditVoucher,
+  onDeletePromotion,
+  onDeleteVoucher,
+  onCancelPromotionEdit,
+  onCancelVoucherEdit,
+}) {
+  return (
+    <div className="admin-offers-layout">
+      <section className="admin-offers-block">
+        <div className="admin-tab-topbar">
+          <span className="admin-count-badge">{promotions.length} chương trình khuyến mãi</span>
+        </div>
 
-function Admin({ adminAuth, onAdminLogout, products, onSetProducts, customers, orders, onSetOrders }) {
+        <form className="admin-offer-form" onSubmit={onSubmitPromotion}>
+          <input
+            type="text"
+            placeholder="Nhãn (VD: Hot deal)"
+            value={promotionDraft.badge}
+            onChange={(e) => onPromotionDraftChange('badge', e.target.value)}
+            required
+          />
+          <input
+            type="text"
+            placeholder="Tiêu đề chương trình"
+            value={promotionDraft.title}
+            onChange={(e) => onPromotionDraftChange('title', e.target.value)}
+            required
+          />
+          <input
+            type="text"
+            placeholder="Thời hạn (VD: Hết hạn: 30/03/2026)"
+            value={promotionDraft.expire}
+            onChange={(e) => onPromotionDraftChange('expire', e.target.value)}
+            required
+          />
+          <textarea
+            rows="2"
+            placeholder="Mô tả chương trình"
+            value={promotionDraft.description}
+            onChange={(e) => onPromotionDraftChange('description', e.target.value)}
+            required
+          />
+          <button type="submit" className="admin-action-btn admin-action-save">
+            {editingPromotionId ? 'Lưu chương trình' : 'Thêm chương trình'}
+          </button>
+          {editingPromotionId && (
+            <button type="button" className="admin-action-btn admin-action-cancel" onClick={onCancelPromotionEdit}>
+              Hủy
+            </button>
+          )}
+        </form>
+
+        <div className="offers-grid admin-offers-grid">
+          {promotions.map((offer) => (
+            <article key={offer.id} className="offer-card admin-offer-card">
+              <div className="offer-top">
+                <span className="offer-badge">{offer.badge}</span>
+                <span className="offer-expire">{offer.expire}</span>
+              </div>
+              <h3>{offer.title}</h3>
+              <p>{offer.description}</p>
+              <div className="admin-row-actions">
+                <button type="button" className="admin-action-btn admin-action-edit" onClick={() => onEditPromotion(offer)}>
+                  Sửa
+                </button>
+                <button type="button" className="admin-action-btn admin-action-delete" onClick={() => onDeletePromotion(offer.id)}>
+                  Xóa
+                </button>
+              </div>
+            </article>
+          ))}
+        </div>
+      </section>
+
+      <section className="admin-offers-block">
+        <div className="admin-tab-topbar">
+          <span className="admin-count-badge">{vouchers.length} voucher</span>
+        </div>
+
+        <form className="admin-offer-form" onSubmit={onSubmitVoucher}>
+          <input
+            type="text"
+            placeholder="Mã voucher (VD: SUNNY10)"
+            value={voucherDraft.code}
+            onChange={(e) => onVoucherDraftChange('code', e.target.value.toUpperCase())}
+            required
+          />
+          <input
+            type="text"
+            placeholder="Mức giảm (VD: Giảm 10%)"
+            value={voucherDraft.discount}
+            onChange={(e) => onVoucherDraftChange('discount', e.target.value)}
+            required
+          />
+          <input
+            type="text"
+            placeholder="Điều kiện áp dụng"
+            value={voucherDraft.rule}
+            onChange={(e) => onVoucherDraftChange('rule', e.target.value)}
+            required
+          />
+          <button type="submit" className="admin-action-btn admin-action-save">
+            {editingVoucherId ? 'Lưu voucher' : 'Thêm voucher'}
+          </button>
+          {editingVoucherId && (
+            <button type="button" className="admin-action-btn admin-action-cancel" onClick={onCancelVoucherEdit}>
+              Hủy
+            </button>
+          )}
+        </form>
+
+        <div className="voucher-grid admin-voucher-grid">
+          {vouchers.map((voucher) => (
+            <article key={voucher.id} className="voucher-card admin-voucher-card">
+              <h3>{voucher.code}</h3>
+              <p className="voucher-discount">{voucher.discount}</p>
+              <p>{voucher.rule}</p>
+              <div className="admin-row-actions">
+                <button type="button" className="admin-action-btn admin-action-edit" onClick={() => onEditVoucher(voucher)}>
+                  Sửa
+                </button>
+                <button type="button" className="admin-action-btn admin-action-delete" onClick={() => onDeleteVoucher(voucher.id)}>
+                  Xóa
+                </button>
+              </div>
+            </article>
+          ))}
+        </div>
+      </section>
+    </div>
+  );
+}
+
+const NAV_TABS = ['dashboard', 'products', 'offers', 'orders', 'customers'];
+
+function Admin({
+  adminAuth,
+  onAdminLogout,
+  products,
+  onSetProducts,
+  customers,
+  orders,
+  onSetOrders,
+  onDeleteOrder,
+  promotions,
+  onSetPromotions,
+  vouchers,
+  onSetVouchers,
+}) {
   const [activeTab, setActiveTab] = useState('dashboard');
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [editingId, setEditingId] = useState(null);
+  const [editingPromotionId, setEditingPromotionId] = useState(null);
+  const [editingVoucherId, setEditingVoucherId] = useState(null);
   const [productDraft, setProductDraft] = useState({
     name: '',
     category: PRODUCT_CATEGORY_OPTIONS[0],
@@ -435,6 +665,17 @@ function Admin({ adminAuth, onAdminLogout, products, onSetProducts, customers, o
     stock: PRODUCT_STOCK_OPTIONS[0],
     quantity: '',
     image: '',
+  });
+  const [promotionDraft, setPromotionDraft] = useState({
+    badge: '',
+    title: '',
+    expire: '',
+    description: '',
+  });
+  const [voucherDraft, setVoucherDraft] = useState({
+    code: '',
+    discount: '',
+    rule: '',
   });
 
   const resetDraft = () => {
@@ -452,6 +693,33 @@ function Admin({ adminAuth, onAdminLogout, products, onSetProducts, customers, o
 
   const handleDraftChange = (field, value) => {
     setProductDraft((prev) => ({ ...prev, [field]: value }));
+  };
+
+  const handlePromotionDraftChange = (field, value) => {
+    setPromotionDraft((prev) => ({ ...prev, [field]: value }));
+  };
+
+  const handleVoucherDraftChange = (field, value) => {
+    setVoucherDraft((prev) => ({ ...prev, [field]: value }));
+  };
+
+  const resetPromotionDraft = () => {
+    setEditingPromotionId(null);
+    setPromotionDraft({
+      badge: '',
+      title: '',
+      expire: '',
+      description: '',
+    });
+  };
+
+  const resetVoucherDraft = () => {
+    setEditingVoucherId(null);
+    setVoucherDraft({
+      code: '',
+      discount: '',
+      rule: '',
+    });
   };
 
   const handleSubmitProduct = (e) => {
@@ -512,7 +780,11 @@ function Admin({ adminAuth, onAdminLogout, products, onSetProducts, customers, o
 
   const handleUpdateOrderStatus = (orderId, nextStatus) => {
     const order = orders.find((item) => item.id === orderId);
-    const isMovingToShipping = order?.status !== 'Đang giao' && nextStatus === 'Đang giao';
+    const shouldDeductInventory =
+      Boolean(order) &&
+      !order.inventoryDeducted &&
+      ['Đang giao', 'Đã giao'].includes(nextStatus) &&
+      order.status !== 'Đã huỷ';
 
     if (nextStatus === 'Đã huỷ') {
       const orderLabel = order ? `${order.id} - ${order.customer}` : 'đơn hàng này';
@@ -525,14 +797,18 @@ function Admin({ adminAuth, onAdminLogout, products, onSetProducts, customers, o
       }
     }
 
-    if (isMovingToShipping && order?.product) {
+    if (shouldDeductInventory) {
+      const orderedItems = getOrderItems(order);
+
       onSetProducts((prev) =>
         prev.map((product) => {
-          if (product.name !== order.product) {
+          const matchedOrderItem = orderedItems.find((item) => item.name === product.name);
+
+          if (!matchedOrderItem) {
             return product;
           }
 
-          const nextQuantity = Math.max(0, Number(product.quantity || 0) - 1);
+          const nextQuantity = Math.max(0, Number(product.quantity || 0) - Number(matchedOrderItem.quantity || 0));
 
           return {
             ...product,
@@ -544,8 +820,106 @@ function Admin({ adminAuth, onAdminLogout, products, onSetProducts, customers, o
     }
 
     onSetOrders((prev) =>
-      prev.map((order) => (order.id === orderId ? { ...order, status: nextStatus } : order)),
+      prev.map((order) =>
+        order.id === orderId
+          ? {
+              ...order,
+              status: nextStatus,
+              inventoryDeducted: shouldDeductInventory ? true : order.inventoryDeducted,
+            }
+          : order,
+      ),
     );
+  };
+
+  const handleSubmitPromotion = (e) => {
+    e.preventDefault();
+
+    if (!promotionDraft.title.trim() || !promotionDraft.description.trim()) {
+      return;
+    }
+
+    const nextPromotion = {
+      id: editingPromotionId || `PRM-${Date.now()}`,
+      badge: promotionDraft.badge.trim(),
+      title: promotionDraft.title.trim(),
+      expire: promotionDraft.expire.trim(),
+      description: promotionDraft.description.trim(),
+    };
+
+    if (editingPromotionId) {
+      onSetPromotions((prev) => prev.map((item) => (item.id === editingPromotionId ? nextPromotion : item)));
+      resetPromotionDraft();
+      return;
+    }
+
+    onSetPromotions((prev) => [nextPromotion, ...prev]);
+    resetPromotionDraft();
+  };
+
+  const handleEditPromotion = (promotion) => {
+    setEditingPromotionId(promotion.id);
+    setPromotionDraft({
+      badge: promotion.badge,
+      title: promotion.title,
+      expire: promotion.expire,
+      description: promotion.description,
+    });
+  };
+
+  const handleDeletePromotion = (promotionId) => {
+    if (!window.confirm('Bạn có chắc muốn xóa chương trình ưu đãi này không?')) {
+      return;
+    }
+
+    onSetPromotions((prev) => prev.filter((item) => item.id !== promotionId));
+    if (editingPromotionId === promotionId) {
+      resetPromotionDraft();
+    }
+  };
+
+  const handleSubmitVoucher = (e) => {
+    e.preventDefault();
+
+    if (!voucherDraft.code.trim() || !voucherDraft.discount.trim() || !voucherDraft.rule.trim()) {
+      return;
+    }
+
+    const nextVoucher = {
+      id: editingVoucherId || `VCR-${Date.now()}`,
+      code: voucherDraft.code.trim().toUpperCase(),
+      discount: voucherDraft.discount.trim(),
+      rule: voucherDraft.rule.trim(),
+    };
+
+    if (editingVoucherId) {
+      onSetVouchers((prev) => prev.map((item) => (item.id === editingVoucherId ? nextVoucher : item)));
+      resetVoucherDraft();
+      return;
+    }
+
+    onSetVouchers((prev) => [nextVoucher, ...prev]);
+    resetVoucherDraft();
+  };
+
+  const handleEditVoucher = (voucher) => {
+    setEditingVoucherId(voucher.id);
+    setVoucherDraft({
+      code: voucher.code,
+      discount: voucher.discount,
+      rule: voucher.rule,
+    });
+  };
+
+  const handleDeleteVoucher = (voucherId) => {
+    if (!window.confirm('Bạn có chắc muốn xóa voucher này không?')) {
+      return;
+    }
+
+    onSetVouchers((prev) => prev.filter((item) => item.id !== voucherId));
+    if (editingVoucherId === voucherId) {
+      resetVoucherDraft();
+    }
   };
 
   return (
@@ -625,7 +999,27 @@ function Admin({ adminAuth, onAdminLogout, products, onSetProducts, customers, o
               onCancelEdit={resetDraft}
             />
           )}
-          {activeTab === 'orders' && <OrdersTab orders={orders} onUpdateOrderStatus={handleUpdateOrderStatus} />}
+          {activeTab === 'offers' && (
+            <OffersTab
+              promotions={promotions}
+              vouchers={vouchers}
+              promotionDraft={promotionDraft}
+              voucherDraft={voucherDraft}
+              editingPromotionId={editingPromotionId}
+              editingVoucherId={editingVoucherId}
+              onPromotionDraftChange={handlePromotionDraftChange}
+              onVoucherDraftChange={handleVoucherDraftChange}
+              onSubmitPromotion={handleSubmitPromotion}
+              onSubmitVoucher={handleSubmitVoucher}
+              onEditPromotion={handleEditPromotion}
+              onEditVoucher={handleEditVoucher}
+              onDeletePromotion={handleDeletePromotion}
+              onDeleteVoucher={handleDeleteVoucher}
+              onCancelPromotionEdit={resetPromotionDraft}
+              onCancelVoucherEdit={resetVoucherDraft}
+            />
+          )}
+          {activeTab === 'orders' && <OrdersTab orders={orders} onUpdateOrderStatus={handleUpdateOrderStatus} onDeleteOrder={onDeleteOrder} />}
           {activeTab === 'customers' && <CustomersTab customers={customers} />}
         </main>
       </div>

@@ -26,8 +26,11 @@ function Users({
   onGoProducts,
   onGoOffers,
   onGoUsers,
+  onGoOrders,
+  onGoCart,
   onGoLogin,
   onGoRegister,
+  cartCount,
 }) {
   const [users, setUsers] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -203,6 +206,12 @@ function Users({
             </button>
             <button type="button" className="catalog-nav-button is-active" onClick={onGoUsers}>
               Users
+            </button>
+            <button type="button" className="catalog-nav-button" onClick={onGoOrders}>
+              Đơn hàng
+            </button>
+            <button type="button" className="catalog-nav-button" onClick={onGoCart}>
+              Giỏ ({cartCount})
             </button>
           </nav>
 
