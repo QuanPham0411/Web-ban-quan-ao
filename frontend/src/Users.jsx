@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import ScrollTopButton from './components/ScrollTopButton';
 
 const PRODUCTION_API_BASE_URL = 'https://api-ban-quan-ao-backend.onrender.com';
 
@@ -382,6 +383,8 @@ function Users({
             </table>
           </div>
         </section>
+
+        <ScrollTopButton />
       </div>
     </div>
   );

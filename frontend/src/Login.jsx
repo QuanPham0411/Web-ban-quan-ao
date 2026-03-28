@@ -1,7 +1,18 @@
 import { useState } from 'react';
 import CartIconButton from './components/CartIconButton';
 
-function Login({ onGoHome, onGoProducts, onGoOffers, onGoUsers, onGoCart, onGoRegister, cartCount, onSubmit }) {
+function Login({
+  onGoHome,
+  onGoProducts,
+  onGoOffers,
+  onGoUsers,
+  onGoCart,
+  onGoRegister,
+  onGoForgotPassword,
+  cartCount,
+  onSubmit,
+  errorMessage,
+}) {
   const [form, setForm] = useState({ email: '', password: '' });
 
   const handleSubmit = (e) => {
@@ -62,6 +73,14 @@ function Login({ onGoHome, onGoProducts, onGoOffers, onGoUsers, onGoCart, onGoRe
           <button className="auth-submit" type="submit">
             Đăng nhập
           </button>
+
+          {errorMessage ? <p className="auth-error">{errorMessage}</p> : null}
+
+          <p className="auth-switch">
+            <button type="button" className="auth-link-btn" onClick={onGoForgotPassword}>
+              Quên mật khẩu?
+            </button>
+          </p>
 
           <p className="auth-switch">
             Chưa có tài khoản?{' '}

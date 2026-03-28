@@ -66,6 +66,37 @@ const parseDiscountAmount = (discountText, subtotal) => {
   return parseAmount(discountText);
 };
 
+const parseExpiryDate = (value) => {
+  const raw = String(value || '').trim();
+
+  if (!raw) {
+    return null;
+  }
+
+  const isoMatch = raw.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (isoMatch) {
+    return new Date(Number(isoMatch[1]), Number(isoMatch[2]) - 1, Number(isoMatch[3]));
+  }
+
+  const dmyMatch = raw.match(/(\d{2})\/(\d{2})\/(\d{4})/);
+  if (dmyMatch) {
+    return new Date(Number(dmyMatch[3]), Number(dmyMatch[2]) - 1, Number(dmyMatch[1]));
+  }
+
+  return null;
+};
+
+const isExpiredByDateValue = (value) => {
+  const date = parseExpiryDate(value);
+
+  if (!date) {
+    return false;
+  }
+
+  const endOfDay = new Date(date.getFullYear(), date.getMonth(), date.getDate(), 23, 59, 59, 999);
+  return Date.now() > endOfDay.getTime();
+};
+
 const getRequiredCategoryKeys = (conditionText) => {
   const text = String(conditionText || '').toLowerCase();
   const keys = [];
@@ -208,8 +239,17 @@ function Checkout({
 
   const totalPrice = cartItems.reduce((total, item) => total + item.priceNumber * item.quantity, 0);
   const totalItems = cartItems.reduce((total, item) => total + item.quantity, 0);
+  const activePromotions = useMemo(
+    () => promotions.filter((promotion) => !isExpiredByDateValue(promotion.expiresAt || promotion.expire)),
+    [promotions],
+  );
+  const activeVouchers = useMemo(
+    () => vouchers.filter((voucher) => !isExpiredByDateValue(voucher.expiresAt || voucher.expire)),
+    [vouchers],
+  );
+
   const autoPromotion = useMemo(() => {
-    const eligiblePromotions = promotions
+    const eligiblePromotions = activePromotions
       .map((promotion) => {
         const result = evaluatePromotion(promotion, totalPrice, totalItems, cartItems);
         return {
@@ -222,15 +262,15 @@ function Checkout({
       .sort((a, b) => b.discount - a.discount);
 
     return eligiblePromotions[0] || null;
-  }, [promotions, totalPrice, totalItems, cartItems]);
+  }, [activePromotions, totalPrice, totalItems, cartItems]);
 
   const voucherEvaluations = useMemo(
     () =>
-      vouchers.map((voucher) => ({
+      activeVouchers.map((voucher) => ({
         voucher,
         ...evaluateVoucher(voucher, totalPrice, totalItems, cartItems),
       })),
-    [vouchers, totalPrice, totalItems, cartItems],
+    [activeVouchers, totalPrice, totalItems, cartItems],
   );
 
   const selectedVoucher = voucherEvaluations.find(

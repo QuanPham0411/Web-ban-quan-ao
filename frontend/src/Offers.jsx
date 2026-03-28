@@ -1,5 +1,36 @@
 import CartIconButton from './components/CartIconButton';
 
+const parseExpiryDate = (value) => {
+  const raw = String(value || '').trim();
+
+  if (!raw) {
+    return null;
+  }
+
+  const isoMatch = raw.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (isoMatch) {
+    return new Date(Number(isoMatch[1]), Number(isoMatch[2]) - 1, Number(isoMatch[3]));
+  }
+
+  const dmyMatch = raw.match(/(\d{2})\/(\d{2})\/(\d{4})/);
+  if (dmyMatch) {
+    return new Date(Number(dmyMatch[3]), Number(dmyMatch[2]) - 1, Number(dmyMatch[1]));
+  }
+
+  return null;
+};
+
+const isExpiredByDateValue = (value) => {
+  const date = parseExpiryDate(value);
+
+  if (!date) {
+    return false;
+  }
+
+  const endOfDay = new Date(date.getFullYear(), date.getMonth(), date.getDate(), 23, 59, 59, 999);
+  return Date.now() > endOfDay.getTime();
+};
+
 function Offers({
   authState,
   onLogout,
@@ -15,6 +46,9 @@ function Offers({
   promotions,
   vouchers,
 }) {
+  const visiblePromotions = promotions.filter((offer) => !isExpiredByDateValue(offer.expiresAt || offer.expire));
+  const visibleVouchers = vouchers.filter((voucher) => !isExpiredByDateValue(voucher.expiresAt || voucher.expire));
+
   return (
     <div className="offers-page">
       <header className="top-header offers-header">
@@ -72,12 +106,12 @@ function Offers({
       </section>
 
       <section className="offers-grid">
-        {promotions.length > 0 ? (
-          promotions.map((offer) => (
+        {visiblePromotions.length > 0 ? (
+          visiblePromotions.map((offer) => (
             <article key={offer.id} className="offer-card">
               <div className="offer-top">
                 <span className="offer-badge">{offer.badge}</span>
-                <span className="offer-expire">{offer.expire}</span>
+                <span className="offer-expire">{offer.expire || (offer.expiresAt ? `Hết hạn: ${offer.expiresAt.split('-').reverse().join('/')}` : '')}</span>
               </div>
               <h3>{offer.title}</h3>
               <p>{offer.description}</p>
@@ -98,8 +132,8 @@ function Offers({
         </div>
 
         <div className="voucher-grid">
-          {vouchers.length > 0 ? (
-            vouchers.map((voucher) => (
+          {visibleVouchers.length > 0 ? (
+            visibleVouchers.map((voucher) => (
               <article key={voucher.id || voucher.code} className="voucher-card">
                 <h3>{voucher.code}</h3>
                 <p className="voucher-discount">{voucher.discount}</p>

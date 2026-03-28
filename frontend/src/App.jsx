@@ -8,6 +8,7 @@ import Orders from './Orders';
 import Checkout from './Checkout';
 import Login from './Login';
 import Register from './Register';
+import ForgotPassword from './ForgotPassword';
 import Cart from './Cart';
 import ProductDetail from './ProductDetail';
 import Admin from './Admin';
@@ -78,6 +79,10 @@ const getCurrentPage = () => {
 
   if (window.location.hash.startsWith('#register')) {
     return 'register';
+  }
+
+  if (window.location.hash.startsWith('#forgot-password')) {
+    return 'forgot-password';
   }
 
   if (window.location.hash.startsWith('#cart')) {
@@ -284,6 +289,7 @@ function App() {
   const [sharedPromotions, setSharedPromotions] = useState(getInitialPromotions);
   const [sharedVouchers, setSharedVouchers] = useState(getInitialVouchers);
   const [latestOrderId, setLatestOrderId] = useState('');
+  const [loginError, setLoginError] = useState('');
 
   useEffect(() => {
     localStorage.setItem(CART_STORAGE_KEY, JSON.stringify(cartItems));
@@ -330,7 +336,7 @@ function App() {
     setAuthState({ isLoggedIn: true, accountLabel: authData.label, email: '' });
   };
 
-  const upsertCustomer = ({ email, name }) => {
+  const upsertCustomer = ({ email, name, phone, password }) => {
     const normalizedCustomerEmail = normalizeEmail(email);
 
     if (!normalizedCustomerEmail || normalizedCustomerEmail === normalizeEmail(ADMIN_EMAIL)) {
@@ -346,6 +352,8 @@ function App() {
             ? {
                 ...customer,
                 name: name?.trim() || customer.name,
+                phone: phone?.trim() || customer.phone,
+                password: password || customer.password,
               }
             : customer,
         );
@@ -356,6 +364,8 @@ function App() {
           id: `USR-${String(previous.length + 1).padStart(3, '0')}`,
           name: name?.trim() || normalizedCustomerEmail.split('@')[0] || 'Khách hàng mới',
           email: normalizedCustomerEmail,
+          phone: phone?.trim() || '',
+          password: password || '',
           orders: 0,
           joined: formatDate(new Date()),
         },
@@ -364,10 +374,22 @@ function App() {
     });
   };
 
+  const handleUpdateCustomer = (updatedCustomer) => {
+    setSharedCustomers((previous) =>
+      previous.map((customer) =>
+        normalizeEmail(customer.email) === normalizeEmail(updatedCustomer.email)
+          ? { ...customer, ...updatedCustomer }
+          : customer
+      )
+    );
+  };
+
   const handleLoginSubmit = ({ email, password }) => {
     const normalizedEmail = normalizeEmail(email);
+    const rawPassword = String(password || '');
 
     if (normalizedEmail === normalizeEmail(ADMIN_EMAIL) && password === ADMIN_PASSWORD) {
+      setLoginError('');
       const adminData = { email: normalizedEmail, loggedInAt: Date.now() };
       localStorage.setItem(ADMIN_AUTH_STORAGE_KEY, JSON.stringify(adminData));
       setAdminAuth({ isAdmin: true, email: normalizedEmail });
@@ -375,11 +397,30 @@ function App() {
       return;
     }
 
+    const existingCustomer = sharedCustomers.find(
+      (customer) => normalizeEmail(customer.email) === normalizedEmail,
+    );
+
+    if (!existingCustomer) {
+      setLoginError('Email này chưa đăng ký tài khoản.');
+      return;
+    }
+
+    if (!existingCustomer.password) {
+      setLoginError('Tài khoản này chưa có mật khẩu. Vui lòng dùng Quên mật khẩu để thiết lập mật khẩu.');
+      return;
+    }
+
+    if (existingCustomer.password !== rawPassword) {
+      setLoginError('Mật khẩu không chính xác.');
+      return;
+    }
+
+    setLoginError('');
     handleAuth('login');
-    upsertCustomer({ email: normalizedEmail, name: normalizedEmail.split('@')[0] });
 
     const emailPrefix = normalizedEmail.split('@')[0];
-    const label = emailPrefix || 'Khách hàng';
+    const label = existingCustomer.name?.trim() || emailPrefix || 'Khách hàng';
     const savedAuth = localStorage.getItem(AUTH_STORAGE_KEY);
     const parsedAuth = savedAuth ? JSON.parse(savedAuth) : {};
     const authData = {
@@ -394,9 +435,10 @@ function App() {
     handleGoHome();
   };
 
-  const handleRegisterSubmit = ({ fullName, email }) => {
+  const handleRegisterSubmit = ({ fullName, email, phone, password }) => {
+    setLoginError('');
     handleAuth('register');
-    upsertCustomer({ email, name: fullName });
+    upsertCustomer({ email, name: fullName, phone, password });
 
     const label = fullName?.trim() || 'Thành viên mới';
     const savedAuth = localStorage.getItem(AUTH_STORAGE_KEY);
@@ -447,12 +489,18 @@ function App() {
   };
 
   const handleGoLogin = () => {
+    setLoginError('');
     window.location.hash = '#login';
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
   const handleGoRegister = () => {
     window.location.hash = '#register';
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const handleGoForgotPassword = () => {
+    window.location.hash = '#forgot-password';
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
@@ -671,7 +719,9 @@ function App() {
         onGoOrders={handleGoOrders}
         onGoCart={handleGoCart}
         onGoRegister={handleGoRegister}
+        onGoForgotPassword={handleGoForgotPassword}
         cartCount={visibleCartCount}
+        errorMessage={loginError}
         onSubmit={handleLoginSubmit}
       />
     );
@@ -689,6 +739,22 @@ function App() {
         onGoLogin={handleGoLogin}
         cartCount={visibleCartCount}
         onSubmit={handleRegisterSubmit}
+      />
+    );
+  }
+
+  if (page === 'forgot-password') {
+    return (
+      <ForgotPassword
+        onGoHome={handleGoHome}
+        onGoProducts={handleGoProducts}
+        onGoOffers={handleGoOffers}
+        onGoUsers={handleGoUsers}
+        onGoCart={handleGoCart}
+        onGoLogin={handleGoLogin}
+        cartCount={visibleCartCount}
+        customers={sharedCustomers}
+        onUpdateCustomer={handleUpdateCustomer}
       />
     );
   }
@@ -795,7 +861,7 @@ function App() {
 
   if (page === 'admin-login') {
     if (adminAuth.isAdmin) {
-      return <Admin adminAuth={adminAuth} onAdminLogout={handleAdminLogout} products={sharedProducts} onSetProducts={setSharedProducts} customers={sharedCustomers} orders={sharedOrders} onSetOrders={setSharedOrders} onDeleteOrder={handleAdminDeleteOrder} promotions={sharedPromotions} onSetPromotions={setSharedPromotions} vouchers={sharedVouchers} onSetVouchers={setSharedVouchers} />;
+      return <Admin adminAuth={adminAuth} onAdminLogout={handleAdminLogout} products={sharedProducts} onSetProducts={setSharedProducts} customers={sharedCustomers} onSetCustomers={setSharedCustomers} orders={sharedOrders} onSetOrders={setSharedOrders} onDeleteOrder={handleAdminDeleteOrder} promotions={sharedPromotions} onSetPromotions={setSharedPromotions} vouchers={sharedVouchers} onSetVouchers={setSharedVouchers} />;
     }
 
     return <AdminLogin onAdminLoginSubmit={handleAdminLoginSubmit} onGoHome={handleGoHome} />;
@@ -806,7 +872,7 @@ function App() {
       return <AdminLogin onAdminLoginSubmit={handleAdminLoginSubmit} onGoHome={handleGoHome} />;
     }
 
-    return <Admin adminAuth={adminAuth} onAdminLogout={handleAdminLogout} products={sharedProducts} onSetProducts={setSharedProducts} customers={sharedCustomers} orders={sharedOrders} onSetOrders={setSharedOrders} onDeleteOrder={handleAdminDeleteOrder} promotions={sharedPromotions} onSetPromotions={setSharedPromotions} vouchers={sharedVouchers} onSetVouchers={setSharedVouchers} />;
+    return <Admin adminAuth={adminAuth} onAdminLogout={handleAdminLogout} products={sharedProducts} onSetProducts={setSharedProducts} customers={sharedCustomers} onSetCustomers={setSharedCustomers} orders={sharedOrders} onSetOrders={setSharedOrders} onDeleteOrder={handleAdminDeleteOrder} promotions={sharedPromotions} onSetPromotions={setSharedPromotions} vouchers={sharedVouchers} onSetVouchers={setSharedVouchers} />;
   }
 
   return (

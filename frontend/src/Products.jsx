@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import CartIconButton from './components/CartIconButton';
+import ScrollTopButton from './components/ScrollTopButton';
 import { categoryConfigs, filterProductsBySearch } from './catalog';
 
 function Products({
@@ -239,6 +240,8 @@ function Products({
           </p>
         </div>
       </footer>
+
+      <ScrollTopButton />
     </div>
   );
 }
