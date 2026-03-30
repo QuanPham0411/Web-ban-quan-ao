@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import CartIconButton from './components/CartIconButton';
+import ScrollTopButton from './components/ScrollTopButton';
 import { categoryConfigs, filterProductsBySearch } from './catalog';
 
 function Products({
@@ -8,6 +9,7 @@ function Products({
   onGoHome,
   onGoOffers,
   onGoUsers,
+  onGoOrders,
   onGoCart,
   onGoLogin,
   onGoRegister,
@@ -58,6 +60,9 @@ function Products({
           </button>
           <button type="button" className="catalog-nav-button" onClick={onGoUsers}>
             Users
+          </button>
+          <button type="button" className="catalog-nav-button" onClick={onGoOrders}>
+            Đơn hàng
           </button>
           <CartIconButton count={cartCount} onClick={onGoCart} />
         </nav>
@@ -235,6 +240,8 @@ function Products({
           </p>
         </div>
       </footer>
+
+      <ScrollTopButton />
     </div>
   );
 }

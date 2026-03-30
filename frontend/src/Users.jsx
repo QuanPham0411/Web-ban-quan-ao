@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import ScrollTopButton from './components/ScrollTopButton';
 
 const PRODUCTION_API_BASE_URL = 'https://api-ban-quan-ao-backend.onrender.com';
 
@@ -26,8 +27,11 @@ function Users({
   onGoProducts,
   onGoOffers,
   onGoUsers,
+  onGoOrders,
+  onGoCart,
   onGoLogin,
   onGoRegister,
+  cartCount,
 }) {
   const [users, setUsers] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -204,6 +208,12 @@ function Users({
             <button type="button" className="catalog-nav-button is-active" onClick={onGoUsers}>
               Users
             </button>
+            <button type="button" className="catalog-nav-button" onClick={onGoOrders}>
+              Đơn hàng
+            </button>
+            <button type="button" className="catalog-nav-button" onClick={onGoCart}>
+              Giỏ ({cartCount})
+            </button>
           </nav>
 
           <div className="auth-actions">
@@ -373,6 +383,8 @@ function Users({
             </table>
           </div>
         </section>
+
+        <ScrollTopButton />
       </div>
     </div>
   );

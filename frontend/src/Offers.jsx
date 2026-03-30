@@ -1,72 +1,35 @@
 import CartIconButton from './components/CartIconButton';
 
-const offers = [
-  {
-    id: 1,
-    title: 'Giảm 20% toàn bộ đầm nữ',
-    description: 'Áp dụng cho dòng đầm midi, maxi và váy công sở nữ.',
-    badge: 'Hot deal',
-    expire: 'Hết hạn: 30/03/2026',
-  },
-  {
-    id: 2,
-    title: 'Mua 2 áo thun nam tặng 1 quần short',
-    description: 'Tự động áp dụng trong giỏ hàng cho nhóm thời trang nam.',
-    badge: 'Combo',
-    expire: 'Hết hạn: 25/03/2026',
-  },
-  {
-    id: 3,
-    title: 'Đồ trẻ em đồng giá từ 129.000đ',
-    description: 'Áp dụng cho sản phẩm bé trai, bé gái và set đi học.',
-    badge: 'Kids',
-    expire: 'Hết hạn: 31/03/2026',
-  },
-  {
-    id: 4,
-    title: 'Đồ lót & mặc nhà giảm đến 35%',
-    description: 'Áp dụng cho bra cotton, đồ ngủ satin và bộ mặc nhà.',
-    badge: 'Intimates',
-    expire: 'Hết hạn: 05/04/2026',
-  },
-  {
-    id: 5,
-    title: 'Freeship toàn quốc',
-    description: 'Đơn hàng từ 399.000đ được miễn phí vận chuyển.',
-    badge: 'Freeship',
-    expire: 'Áp dụng mỗi ngày',
-  },
-  {
-    id: 6,
-    title: 'Tặng 50K cho đơn đầu tiên',
-    description: 'Khách hàng mới nhập mã NEW50 để nhận giảm trực tiếp.',
-    badge: 'New user',
-    expire: 'Hết hạn: 15/04/2026',
-  },
-  {
-    id: 7,
-    title: 'Giảm 15% cho thành viên thân thiết',
-    description: 'Áp dụng khi tài khoản đạt từ 5 đơn hàng trở lên.',
-    badge: 'Member',
-    expire: 'Áp dụng hằng tháng',
-  },
-  {
-    id: 8,
-    title: 'Flash sale 10h - 12h',
-    description: 'Giảm thêm 10% cho các sản phẩm đang có giá ưu đãi.',
-    badge: 'Flash',
-    expire: 'Mỗi ngày 10:00 - 12:00',
-  },
-];
+const parseExpiryDate = (value) => {
+  const raw = String(value || '').trim();
 
-const vouchers = [
-  { code: 'SUNNY10', discount: 'Giảm 10%', rule: 'Đơn từ 299.000đ' },
-  { code: 'WOMEN20', discount: 'Giảm 20%', rule: 'Danh mục Nữ từ 499.000đ' },
-  { code: 'MEN15', discount: 'Giảm 15%', rule: 'Danh mục Nam từ 399.000đ' },
-  { code: 'KIDS25', discount: 'Giảm 25%', rule: 'Danh mục Trẻ em từ 350.000đ' },
-  { code: 'INTI30', discount: 'Giảm 30%', rule: 'Đồ lót & mặc nhà từ 300.000đ' },
-  { code: 'VIP50', discount: 'Giảm 50.000đ', rule: 'Cho thành viên VIP' },
-];
+  if (!raw) {
+    return null;
+  }
+
+  const isoMatch = raw.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (isoMatch) {
+    return new Date(Number(isoMatch[1]), Number(isoMatch[2]) - 1, Number(isoMatch[3]));
+  }
+
+  const dmyMatch = raw.match(/(\d{2})\/(\d{2})\/(\d{4})/);
+  if (dmyMatch) {
+    return new Date(Number(dmyMatch[3]), Number(dmyMatch[2]) - 1, Number(dmyMatch[1]));
+  }
+
+  return null;
+};
+
+const isExpiredByDateValue = (value) => {
+  const date = parseExpiryDate(value);
+
+  if (!date) {
+    return false;
+  }
+
+  const endOfDay = new Date(date.getFullYear(), date.getMonth(), date.getDate(), 23, 59, 59, 999);
+  return Date.now() > endOfDay.getTime();
+};
 
 function Offers({
   authState,
@@ -75,11 +38,17 @@ function Offers({
   onGoProducts,
   onGoOffers,
   onGoUsers,
+  onGoOrders,
   onGoCart,
   onGoLogin,
   onGoRegister,
   cartCount,
+  promotions,
+  vouchers,
 }) {
+  const visiblePromotions = promotions.filter((offer) => !isExpiredByDateValue(offer.expiresAt || offer.expire));
+  const visibleVouchers = vouchers.filter((voucher) => !isExpiredByDateValue(voucher.expiresAt || voucher.expire));
+
   return (
     <div className="offers-page">
       <header className="top-header offers-header">
@@ -99,6 +68,9 @@ function Offers({
           </button>
           <button type="button" className="catalog-nav-button" onClick={onGoUsers}>
             Users
+          </button>
+          <button type="button" className="catalog-nav-button" onClick={onGoOrders}>
+            Đơn hàng
           </button>
           <CartIconButton count={cartCount} onClick={onGoCart} />
         </nav>
@@ -134,16 +106,23 @@ function Offers({
       </section>
 
       <section className="offers-grid">
-        {offers.map((offer) => (
-          <article key={offer.id} className="offer-card">
-            <div className="offer-top">
-              <span className="offer-badge">{offer.badge}</span>
-              <span className="offer-expire">{offer.expire}</span>
-            </div>
-            <h3>{offer.title}</h3>
-            <p>{offer.description}</p>
+        {visiblePromotions.length > 0 ? (
+          visiblePromotions.map((offer) => (
+            <article key={offer.id} className="offer-card">
+              <div className="offer-top">
+                <span className="offer-badge">{offer.badge}</span>
+                <span className="offer-expire">{offer.expire || (offer.expiresAt ? `Hết hạn: ${offer.expiresAt.split('-').reverse().join('/')}` : '')}</span>
+              </div>
+              <h3>{offer.title}</h3>
+              <p>{offer.description}</p>
+            </article>
+          ))
+        ) : (
+          <article className="offer-card">
+            <h3>Chưa có chương trình ưu đãi</h3>
+            <p>Shop chưa thêm khuyến mãi nào. Vui lòng quay lại sau.</p>
           </article>
-        ))}
+        )}
       </section>
 
       <section className="voucher-section">
@@ -153,13 +132,21 @@ function Offers({
         </div>
 
         <div className="voucher-grid">
-          {vouchers.map((voucher) => (
-            <article key={voucher.code} className="voucher-card">
-              <h3>{voucher.code}</h3>
-              <p className="voucher-discount">{voucher.discount}</p>
-              <p>{voucher.rule}</p>
+          {visibleVouchers.length > 0 ? (
+            visibleVouchers.map((voucher) => (
+              <article key={voucher.id || voucher.code} className="voucher-card">
+                <h3>{voucher.code}</h3>
+                <p className="voucher-discount">{voucher.discount}</p>
+                <p>{voucher.rule}</p>
+              </article>
+            ))
+          ) : (
+            <article className="voucher-card">
+              <h3>Chưa có voucher</h3>
+              <p className="voucher-discount">Hiện chưa có mã áp dụng</p>
+              <p>Admin chưa thêm voucher nào cho shop.</p>
             </article>
-          ))}
+          )}
         </div>
       </section>
 

@@ -1,5 +1,7 @@
 import { useState } from 'react';
 import { filterProductsBySearch } from './catalog';
+import AdminInventory from './AdminInventory';
+import ScrollTopButton from './components/ScrollTopButton';
 
 const ORDER_STATUS_CLASS = {
   'Đã xác nhận': 'admin-status-confirmed',
@@ -20,6 +22,8 @@ const ORDER_ACTIONS = [
 const TAB_LABELS = {
   dashboard: 'Dashboard',
   products: 'Sản phẩm',
+  inventory: 'Tồn kho',
+  offers: 'Ưu đãi',
   orders: 'Đơn hàng',
   customers: 'Khách hàng',
 };
@@ -57,6 +61,116 @@ const parsePriceInput = (value) => {
 };
 
 const parseAmount = (amount) => Number(String(amount || '').replace(/\D/g, ''));
+
+const parseExpiryDate = (value) => {
+  const raw = String(value || '').trim();
+
+  if (!raw) {
+    return null;
+  }
+
+  const isoMatch = raw.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (isoMatch) {
+    const year = Number(isoMatch[1]);
+    const month = Number(isoMatch[2]);
+    const day = Number(isoMatch[3]);
+    return new Date(year, month - 1, day);
+  }
+
+  const dmyMatch = raw.match(/(\d{2})\/(\d{2})\/(\d{4})/);
+  if (dmyMatch) {
+    const day = Number(dmyMatch[1]);
+    const month = Number(dmyMatch[2]);
+    const year = Number(dmyMatch[3]);
+    return new Date(year, month - 1, day);
+  }
+
+  return null;
+};
+
+const formatDateToDmy = (date) => {
+  if (!(date instanceof Date) || Number.isNaN(date.getTime())) {
+    return '';
+  }
+
+  return `${String(date.getDate()).padStart(2, '0')}/${String(date.getMonth() + 1).padStart(2, '0')}/${date.getFullYear()}`;
+};
+
+const formatExpireLabel = (value) => {
+  const date = parseExpiryDate(value);
+  if (!date) {
+    return String(value || '').trim() || 'Không có thời hạn';
+  }
+
+  return `Hết hạn: ${formatDateToDmy(date)}`;
+};
+
+const toInputDateValue = (value) => {
+  const date = parseExpiryDate(value);
+
+  if (!date) {
+    return '';
+  }
+
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+};
+
+const isExpiredByDateValue = (value) => {
+  const date = parseExpiryDate(value);
+  if (!date) {
+    return false;
+  }
+
+  const endOfDay = new Date(date.getFullYear(), date.getMonth(), date.getDate(), 23, 59, 59, 999);
+  return Date.now() > endOfDay.getTime();
+};
+
+const getOrderItems = (order) => {
+  if (Array.isArray(order.items) && order.items.length > 0) {
+    return order.items;
+  }
+
+  if (order.product) {
+    return [{ id: order.id, name: order.product, quantity: 1 }];
+  }
+
+  return [];
+};
+
+function OrderItemsCell({ order }) {
+  const items = getOrderItems(order);
+  const groupedItems = items.reduce((accumulator, item) => {
+    const key = String(item.name || '').trim();
+    if (!key) {
+      return accumulator;
+    }
+
+    const existing = accumulator.find((entry) => entry.name === key);
+    if (existing) {
+      existing.quantity += Number(item.quantity || 0);
+      return accumulator;
+    }
+
+    accumulator.push({
+      name: key,
+      quantity: Number(item.quantity || 0),
+    });
+    return accumulator;
+  }, []);
+
+  return (
+    <div className="admin-order-product-list">
+      {groupedItems.map((item, index) => (
+        <div key={`${order.id}-${item.name}-${index}`} className="admin-order-product-item">
+          <span>
+            {item.name}
+            {Number(item.quantity || 0) > 1 ? ` (SL: ${item.quantity})` : ''}
+          </span>
+        </div>
+      ))}
+    </div>
+  );
+}
 
 function StatCard({ label, value, colorClass, icon }) {
   return (
@@ -142,7 +256,7 @@ function DashboardTab({ orders, products, customers }) {
                 <tr key={order.id}>
                   <td className="admin-td-id">{order.id}</td>
                   <td>{order.customer}</td>
-                  <td>{order.product}</td>
+                  <td><OrderItemsCell order={order} /></td>
                   <td className="admin-td-amount">{order.amount}</td>
                   <td>
                     <span className={`admin-status-badge ${ORDER_STATUS_CLASS[order.status] ?? 'admin-status-pending'}`}>
@@ -204,6 +318,13 @@ function ProductsTab({
           onChange={(e) => onDraftChange('name', e.target.value)}
           required
         />
+        <textarea
+          rows="2"
+          className="admin-product-description-input"
+          placeholder="Mô tả sản phẩm"
+          value={draft.description}
+          onChange={(e) => onDraftChange('description', e.target.value)}
+        />
         <select value={draft.category} onChange={(e) => onDraftChange('category', e.target.value)}>
           {PRODUCT_CATEGORY_OPTIONS.map((option) => (
             <option key={option} value={option}>
@@ -262,6 +383,7 @@ function ProductsTab({
               <th>Mã SP</th>
               <th>Hình ảnh</th>
               <th>Tên sản phẩm</th>
+              <th>Mô tả</th>
               <th>Danh mục</th>
               <th>Giá</th>
               <th>Size</th>
@@ -284,6 +406,7 @@ function ProductsTab({
                     )}
                   </td>
                   <td>{p.name}</td>
+                  <td className="admin-product-description-cell">{p.description || 'Chưa có mô tả'}</td>
                   <td>
                     <span className="admin-category-badge">{p.categoryLabel}</span>
                   </td>
@@ -316,11 +439,12 @@ function ProductsTab({
   );
 }
 
-function OrdersTab({ orders, onUpdateOrderStatus }) {
+function OrdersTab({ orders, onUpdateOrderStatus, onDeleteOrder }) {
   const canConfirmOrder = (status) => !['Đã giao', 'Đã huỷ', 'Đang giao', 'Đã xác nhận'].includes(status);
   const canShipOrder = (status) => !['Đã giao', 'Đã huỷ', 'Đang giao'].includes(status);
   const canDeliverOrder = (status) => !['Đã giao', 'Đã huỷ'].includes(status);
   const canCancelOrder = (status) => !['Đã giao', 'Đã huỷ'].includes(status);
+  const canDeleteOrder = (status) => status === 'Đã huỷ';
 
   const isActionDisabled = (actionKey, status) => {
     if (actionKey === 'confirm') return !canConfirmOrder(status);
@@ -328,6 +452,18 @@ function OrdersTab({ orders, onUpdateOrderStatus }) {
     if (actionKey === 'delivered') return !canDeliverOrder(status);
     if (actionKey === 'cancel') return !canCancelOrder(status);
     return false;
+  };
+
+  const handleDeleteOrder = (order) => {
+    const confirmed = window.confirm(
+      `Bạn có chắc muốn xóa hẳn đơn ${order.id} không?\nSau khi xóa, đơn sẽ biến mất khỏi Dashboard và danh sách đơn hàng.`,
+    );
+
+    if (!confirmed) {
+      return;
+    }
+
+    onDeleteOrder(order.id);
   };
 
   return (
@@ -353,7 +489,7 @@ function OrdersTab({ orders, onUpdateOrderStatus }) {
               <tr key={order.id}>
                 <td className="admin-td-id">{order.id}</td>
                 <td>{order.customer}</td>
-                <td>{order.product}</td>
+                <td><OrderItemsCell order={order} /></td>
                 <td className="admin-td-amount">{order.amount}</td>
                 <td>
                   <span className={`admin-status-badge ${ORDER_STATUS_CLASS[order.status] ?? 'admin-status-pending'}`}>
@@ -374,6 +510,15 @@ function OrdersTab({ orders, onUpdateOrderStatus }) {
                         {action.label}
                       </button>
                     ))}
+                    {canDeleteOrder(order.status) ? (
+                      <button
+                        type="button"
+                        className="admin-order-action-btn admin-order-action-delete"
+                        onClick={() => handleDeleteOrder(order)}
+                      >
+                        Xóa đơn
+                      </button>
+                    ) : null}
                   </div>
                 </td>
               </tr>
@@ -386,7 +531,7 @@ function OrdersTab({ orders, onUpdateOrderStatus }) {
   );
 }
 
-function CustomersTab({ customers }) {
+function CustomersTab({ customers, onDeleteCustomer }) {
   return (
     <div>
       <div className="admin-tab-topbar">
@@ -401,6 +546,7 @@ function CustomersTab({ customers }) {
               <th>Email</th>
               <th>Số đơn</th>
               <th>Ngày tham gia</th>
+              <th>Hành động</th>
             </tr>
           </thead>
           <tbody>
@@ -411,6 +557,13 @@ function CustomersTab({ customers }) {
                 <td>{c.email}</td>
                 <td>{c.orders}</td>
                 <td>{c.joined}</td>
+                <td>
+                  <div className="admin-row-actions">
+                    <button type="button" className="admin-action-btn admin-action-delete" onClick={() => onDeleteCustomer(c)}>
+                      Xóa
+                    </button>
+                  </div>
+                </td>
               </tr>
             ))}
           </tbody>
@@ -421,14 +574,202 @@ function CustomersTab({ customers }) {
   );
 }
 
-const NAV_TABS = ['dashboard', 'products', 'orders', 'customers'];
+function OffersTab({
+  promotions,
+  vouchers,
+  promotionDraft,
+  voucherDraft,
+  editingPromotionId,
+  editingVoucherId,
+  onPromotionDraftChange,
+  onVoucherDraftChange,
+  onSubmitPromotion,
+  onSubmitVoucher,
+  onEditPromotion,
+  onEditVoucher,
+  onDeletePromotion,
+  onDeleteVoucher,
+  onCancelPromotionEdit,
+  onCancelVoucherEdit,
+}) {
+  const promotionItems = promotions.map((offer) => {
+    const expirySource = offer.expiresAt || offer.expire;
+    return {
+      ...offer,
+      expireLabel: formatExpireLabel(expirySource),
+      isExpired: isExpiredByDateValue(expirySource),
+    };
+  });
 
-function Admin({ adminAuth, onAdminLogout, products, onSetProducts, customers, orders, onSetOrders }) {
+  const voucherItems = vouchers.map((voucher) => {
+    const expirySource = voucher.expiresAt || voucher.expire;
+    return {
+      ...voucher,
+      expireLabel: formatExpireLabel(expirySource),
+      isExpired: isExpiredByDateValue(expirySource),
+    };
+  });
+
+  return (
+    <div className="admin-offers-layout">
+      <section className="admin-offers-block">
+        <div className="admin-tab-topbar">
+          <span className="admin-count-badge">{promotions.length} chương trình khuyến mãi</span>
+        </div>
+
+        <form className="admin-offer-form" onSubmit={onSubmitPromotion}>
+          <input
+            type="text"
+            placeholder="Nhãn (VD: Hot deal)"
+            value={promotionDraft.badge}
+            onChange={(e) => onPromotionDraftChange('badge', e.target.value)}
+            required
+          />
+          <input
+            type="text"
+            placeholder="Tiêu đề chương trình"
+            value={promotionDraft.title}
+            onChange={(e) => onPromotionDraftChange('title', e.target.value)}
+            required
+          />
+          <input
+            type="date"
+            value={promotionDraft.expiresAt}
+            onChange={(e) => onPromotionDraftChange('expiresAt', e.target.value)}
+            required
+          />
+          <textarea
+            rows="2"
+            placeholder="Mô tả chương trình"
+            value={promotionDraft.description}
+            onChange={(e) => onPromotionDraftChange('description', e.target.value)}
+            required
+          />
+          <button type="submit" className="admin-action-btn admin-action-save">
+            {editingPromotionId ? 'Lưu chương trình' : 'Thêm chương trình'}
+          </button>
+          {editingPromotionId && (
+            <button type="button" className="admin-action-btn admin-action-cancel" onClick={onCancelPromotionEdit}>
+              Hủy
+            </button>
+          )}
+        </form>
+
+        <div className="offers-grid admin-offers-grid">
+          {promotionItems.map((offer) => (
+            <article key={offer.id} className={`offer-card admin-offer-card${offer.isExpired ? ' is-expired' : ''}`}>
+              <div className="offer-top">
+                <span className="offer-badge">{offer.badge}</span>
+                <span className="offer-expire">{offer.expireLabel}</span>
+              </div>
+              {offer.isExpired ? <span className="admin-expired-pill">Hết hạn</span> : null}
+              <h3>{offer.title}</h3>
+              <p>{offer.description}</p>
+              <div className="admin-row-actions">
+                <button type="button" className="admin-action-btn admin-action-edit" onClick={() => onEditPromotion(offer)}>
+                  Sửa
+                </button>
+                <button type="button" className="admin-action-btn admin-action-delete" onClick={() => onDeletePromotion(offer)}>
+                  {offer.isExpired ? 'Xóa hết hạn' : 'Xóa'}
+                </button>
+              </div>
+            </article>
+          ))}
+        </div>
+      </section>
+
+      <section className="admin-offers-block">
+        <div className="admin-tab-topbar">
+          <span className="admin-count-badge">{vouchers.length} voucher</span>
+        </div>
+
+        <form className="admin-offer-form" onSubmit={onSubmitVoucher}>
+          <input
+            type="text"
+            placeholder="Mã voucher (VD: SUNNY10)"
+            value={voucherDraft.code}
+            onChange={(e) => onVoucherDraftChange('code', e.target.value.toUpperCase())}
+            required
+          />
+          <input
+            type="text"
+            placeholder="Mức giảm (VD: Giảm 10%)"
+            value={voucherDraft.discount}
+            onChange={(e) => onVoucherDraftChange('discount', e.target.value)}
+            required
+          />
+          <input
+            type="text"
+            placeholder="Điều kiện áp dụng"
+            value={voucherDraft.rule}
+            onChange={(e) => onVoucherDraftChange('rule', e.target.value)}
+            required
+          />
+          <input
+            type="date"
+            value={voucherDraft.expiresAt}
+            onChange={(e) => onVoucherDraftChange('expiresAt', e.target.value)}
+            required
+          />
+          <button type="submit" className="admin-action-btn admin-action-save">
+            {editingVoucherId ? 'Lưu voucher' : 'Thêm voucher'}
+          </button>
+          {editingVoucherId && (
+            <button type="button" className="admin-action-btn admin-action-cancel" onClick={onCancelVoucherEdit}>
+              Hủy
+            </button>
+          )}
+        </form>
+
+        <div className="voucher-grid admin-voucher-grid">
+          {voucherItems.map((voucher) => (
+            <article key={voucher.id} className={`voucher-card admin-voucher-card${voucher.isExpired ? ' is-expired' : ''}`}>
+              <h3>{voucher.code}</h3>
+              <p className="voucher-discount">{voucher.discount}</p>
+              <p>{voucher.rule}</p>
+              <p className="offer-expire">{voucher.expireLabel}</p>
+              {voucher.isExpired ? <span className="admin-expired-pill">Hết hạn</span> : null}
+              <div className="admin-row-actions">
+                <button type="button" className="admin-action-btn admin-action-edit" onClick={() => onEditVoucher(voucher)}>
+                  Sửa
+                </button>
+                <button type="button" className="admin-action-btn admin-action-delete" onClick={() => onDeleteVoucher(voucher)}>
+                  {voucher.isExpired ? 'Xóa hết hạn' : 'Xóa'}
+                </button>
+              </div>
+            </article>
+          ))}
+        </div>
+      </section>
+    </div>
+  );
+}
+
+const NAV_TABS = ['dashboard', 'products', 'inventory', 'offers', 'orders', 'customers'];
+
+function Admin({
+  adminAuth,
+  onAdminLogout,
+  products,
+  onSetProducts,
+  customers,
+  onSetCustomers,
+  orders,
+  onSetOrders,
+  onDeleteOrder,
+  promotions,
+  onSetPromotions,
+  vouchers,
+  onSetVouchers,
+}) {
   const [activeTab, setActiveTab] = useState('dashboard');
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [editingId, setEditingId] = useState(null);
+  const [editingPromotionId, setEditingPromotionId] = useState(null);
+  const [editingVoucherId, setEditingVoucherId] = useState(null);
   const [productDraft, setProductDraft] = useState({
     name: '',
+    description: '',
     category: PRODUCT_CATEGORY_OPTIONS[0],
     priceInput: '',
     size: PRODUCT_SIZE_OPTIONS[0],
@@ -436,11 +777,24 @@ function Admin({ adminAuth, onAdminLogout, products, onSetProducts, customers, o
     quantity: '',
     image: '',
   });
+  const [promotionDraft, setPromotionDraft] = useState({
+    badge: '',
+    title: '',
+    expiresAt: '',
+    description: '',
+  });
+  const [voucherDraft, setVoucherDraft] = useState({
+    code: '',
+    discount: '',
+    rule: '',
+    expiresAt: '',
+  });
 
   const resetDraft = () => {
     setEditingId(null);
     setProductDraft({
       name: '',
+      description: '',
       category: PRODUCT_CATEGORY_OPTIONS[0],
       priceInput: '',
       size: PRODUCT_SIZE_OPTIONS[0],
@@ -452,6 +806,34 @@ function Admin({ adminAuth, onAdminLogout, products, onSetProducts, customers, o
 
   const handleDraftChange = (field, value) => {
     setProductDraft((prev) => ({ ...prev, [field]: value }));
+  };
+
+  const handlePromotionDraftChange = (field, value) => {
+    setPromotionDraft((prev) => ({ ...prev, [field]: value }));
+  };
+
+  const handleVoucherDraftChange = (field, value) => {
+    setVoucherDraft((prev) => ({ ...prev, [field]: value }));
+  };
+
+  const resetPromotionDraft = () => {
+    setEditingPromotionId(null);
+    setPromotionDraft({
+      badge: '',
+      title: '',
+      expiresAt: '',
+      description: '',
+    });
+  };
+
+  const resetVoucherDraft = () => {
+    setEditingVoucherId(null);
+    setVoucherDraft({
+      code: '',
+      discount: '',
+      rule: '',
+      expiresAt: '',
+    });
   };
 
   const handleSubmitProduct = (e) => {
@@ -468,7 +850,7 @@ function Admin({ adminAuth, onAdminLogout, products, onSetProducts, customers, o
       categoryLabel: productDraft.category,
       name: productDraft.name.trim(),
       price: formatVnd(priceNumber),
-      description: '',
+      description: productDraft.description.trim(),
       image: productDraft.image.trim(),
       size: productDraft.size,
       stockLabel: productDraft.stock,
@@ -489,6 +871,7 @@ function Admin({ adminAuth, onAdminLogout, products, onSetProducts, customers, o
     setEditingId(product.id);
     setProductDraft({
       name: product.name,
+      description: product.description || '',
       category: product.categoryLabel,
       priceInput: String(parsePriceInput(product.price)),
       size: product.size,
@@ -510,9 +893,24 @@ function Admin({ adminAuth, onAdminLogout, products, onSetProducts, customers, o
     }
   };
 
+  const handleDeleteCustomer = (customer) => {
+    const customerLabel = customer?.name ? `${customer.name} (${customer.email})` : customer?.email || 'tài khoản này';
+    const confirmed = window.confirm(`Bạn có chắc muốn xóa tài khoản ${customerLabel} không?`);
+
+    if (!confirmed) {
+      return;
+    }
+
+    onSetCustomers((prev) => prev.filter((item) => item.id !== customer.id));
+  };
+
   const handleUpdateOrderStatus = (orderId, nextStatus) => {
     const order = orders.find((item) => item.id === orderId);
-    const isMovingToShipping = order?.status !== 'Đang giao' && nextStatus === 'Đang giao';
+    const shouldDeductInventory =
+      Boolean(order) &&
+      !order.inventoryDeducted &&
+      nextStatus === 'Đã giao' &&
+      order.status !== 'Đã huỷ';
 
     if (nextStatus === 'Đã huỷ') {
       const orderLabel = order ? `${order.id} - ${order.customer}` : 'đơn hàng này';
@@ -525,14 +923,18 @@ function Admin({ adminAuth, onAdminLogout, products, onSetProducts, customers, o
       }
     }
 
-    if (isMovingToShipping && order?.product) {
+    if (shouldDeductInventory) {
+      const orderedItems = getOrderItems(order);
+
       onSetProducts((prev) =>
         prev.map((product) => {
-          if (product.name !== order.product) {
+          const matchedOrderItem = orderedItems.find((item) => item.name === product.name);
+
+          if (!matchedOrderItem) {
             return product;
           }
 
-          const nextQuantity = Math.max(0, Number(product.quantity || 0) - 1);
+          const nextQuantity = Math.max(0, Number(product.quantity || 0) - Number(matchedOrderItem.quantity || 0));
 
           return {
             ...product,
@@ -544,8 +946,124 @@ function Admin({ adminAuth, onAdminLogout, products, onSetProducts, customers, o
     }
 
     onSetOrders((prev) =>
-      prev.map((order) => (order.id === orderId ? { ...order, status: nextStatus } : order)),
+      prev.map((order) =>
+        order.id === orderId
+          ? {
+              ...order,
+              status: nextStatus,
+              inventoryDeducted: shouldDeductInventory ? true : order.inventoryDeducted,
+            }
+          : order,
+      ),
     );
+  };
+
+  const handleSubmitPromotion = (e) => {
+    e.preventDefault();
+
+    if (!promotionDraft.title.trim() || !promotionDraft.description.trim() || !promotionDraft.expiresAt) {
+      return;
+    }
+
+    const nextPromotion = {
+      id: editingPromotionId || `PRM-${Date.now()}`,
+      badge: promotionDraft.badge.trim(),
+      title: promotionDraft.title.trim(),
+      expiresAt: promotionDraft.expiresAt,
+      expire: formatExpireLabel(promotionDraft.expiresAt),
+      description: promotionDraft.description.trim(),
+    };
+
+    if (editingPromotionId) {
+      onSetPromotions((prev) => prev.map((item) => (item.id === editingPromotionId ? nextPromotion : item)));
+      resetPromotionDraft();
+      return;
+    }
+
+    onSetPromotions((prev) => [nextPromotion, ...prev]);
+    resetPromotionDraft();
+  };
+
+  const handleEditPromotion = (promotion) => {
+    setEditingPromotionId(promotion.id);
+    setPromotionDraft({
+      badge: promotion.badge,
+      title: promotion.title,
+      expiresAt: toInputDateValue(promotion.expiresAt || promotion.expire),
+      description: promotion.description,
+    });
+  };
+
+  const handleDeletePromotion = (promotion) => {
+    const target = typeof promotion === 'object' ? promotion : promotions.find((item) => item.id === promotion);
+    const promotionId = target?.id || promotion;
+    const expired = isExpiredByDateValue(target?.expiresAt || target?.expire);
+    const confirmMessage = expired
+      ? 'Chương trình này đã hết hạn. Bạn có chắc muốn xóa khỏi admin không?'
+      : 'Bạn có chắc muốn xóa chương trình ưu đãi này không?';
+
+    if (!window.confirm(confirmMessage)) {
+      return;
+    }
+
+    onSetPromotions((prev) => prev.filter((item) => item.id !== promotionId));
+    if (editingPromotionId === promotionId) {
+      resetPromotionDraft();
+    }
+  };
+
+  const handleSubmitVoucher = (e) => {
+    e.preventDefault();
+
+    if (!voucherDraft.code.trim() || !voucherDraft.discount.trim() || !voucherDraft.rule.trim() || !voucherDraft.expiresAt) {
+      return;
+    }
+
+    const nextVoucher = {
+      id: editingVoucherId || `VCR-${Date.now()}`,
+      code: voucherDraft.code.trim().toUpperCase(),
+      discount: voucherDraft.discount.trim(),
+      rule: voucherDraft.rule.trim(),
+      expiresAt: voucherDraft.expiresAt,
+      expire: formatExpireLabel(voucherDraft.expiresAt),
+    };
+
+    if (editingVoucherId) {
+      onSetVouchers((prev) => prev.map((item) => (item.id === editingVoucherId ? nextVoucher : item)));
+      resetVoucherDraft();
+      return;
+    }
+
+    onSetVouchers((prev) => [nextVoucher, ...prev]);
+    resetVoucherDraft();
+  };
+
+  const handleEditVoucher = (voucher) => {
+    setEditingVoucherId(voucher.id);
+    setVoucherDraft({
+      code: voucher.code,
+      discount: voucher.discount,
+      rule: voucher.rule,
+      expiresAt: toInputDateValue(voucher.expiresAt || voucher.expire),
+    });
+  };
+
+  const handleDeleteVoucher = (voucher) => {
+    const target = typeof voucher === 'object' ? voucher : vouchers.find((item) => item.id === voucher);
+    const voucherId = target?.id || voucher;
+    const expired = isExpiredByDateValue(target?.expiresAt || target?.expire);
+    const confirmMessage = expired
+      ? 'Voucher này đã hết hạn. Bạn có chắc muốn xóa khỏi admin không?'
+      : 'Bạn có chắc muốn xóa voucher này không?';
+
+    if (!window.confirm(confirmMessage)) {
+      return;
+    }
+
+    onSetVouchers((prev) => prev.filter((item) => item.id !== voucherId));
+    if (editingVoucherId === voucherId) {
+      resetVoucherDraft();
+    }
   };
 
   return (
@@ -625,9 +1143,32 @@ function Admin({ adminAuth, onAdminLogout, products, onSetProducts, customers, o
               onCancelEdit={resetDraft}
             />
           )}
-          {activeTab === 'orders' && <OrdersTab orders={orders} onUpdateOrderStatus={handleUpdateOrderStatus} />}
-          {activeTab === 'customers' && <CustomersTab customers={customers} />}
+          {activeTab === 'inventory' && <AdminInventory products={products} />}
+          {activeTab === 'offers' && (
+            <OffersTab
+              promotions={promotions}
+              vouchers={vouchers}
+              promotionDraft={promotionDraft}
+              voucherDraft={voucherDraft}
+              editingPromotionId={editingPromotionId}
+              editingVoucherId={editingVoucherId}
+              onPromotionDraftChange={handlePromotionDraftChange}
+              onVoucherDraftChange={handleVoucherDraftChange}
+              onSubmitPromotion={handleSubmitPromotion}
+              onSubmitVoucher={handleSubmitVoucher}
+              onEditPromotion={handleEditPromotion}
+              onEditVoucher={handleEditVoucher}
+              onDeletePromotion={handleDeletePromotion}
+              onDeleteVoucher={handleDeleteVoucher}
+              onCancelPromotionEdit={resetPromotionDraft}
+              onCancelVoucherEdit={resetVoucherDraft}
+            />
+          )}
+          {activeTab === 'orders' && <OrdersTab orders={orders} onUpdateOrderStatus={handleUpdateOrderStatus} onDeleteOrder={onDeleteOrder} />}
+          {activeTab === 'customers' && <CustomersTab customers={customers} onDeleteCustomer={handleDeleteCustomer} />}
         </main>
+
+        {(activeTab === 'products' || activeTab === 'inventory') ? <ScrollTopButton /> : null}
       </div>
     </div>
   );
