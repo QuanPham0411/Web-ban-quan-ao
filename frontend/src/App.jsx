@@ -328,9 +328,11 @@ const getInitialAuthState = () => {
   if (savedAuth) {
     try {
       const parsedAuth = JSON.parse(savedAuth);
+      const savedFullName = String(parsedAuth.fullName || '').trim();
+      const savedLabel = String(parsedAuth.label || '').trim();
       return {
         isLoggedIn: true,
-        accountLabel: parsedAuth.label || 'Khách hàng',
+        accountLabel: savedFullName || savedLabel || 'Khách hàng',
         email: parsedAuth.email || '',
       };
     } catch {
@@ -490,8 +492,10 @@ function App() {
       }
 
       // Nếu customer, login như bình thường
+      const fullName = String(data.user?.fullName || '').trim();
       const authData = {
-        label: normalizedEmail.split('@')[0] || data.user?.fullName || 'Khách hàng',
+        label: fullName || normalizedEmail.split('@')[0] || 'Khách hàng',
+        fullName,
         mode: 'login',
         email: normalizedEmail,
         token: data.token,
