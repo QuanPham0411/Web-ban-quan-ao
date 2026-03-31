@@ -25,7 +25,7 @@ const resolveApiBaseUrl = () => {
   }
 
   if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
-    return '';
+    return 'http://localhost:3000';
   }
 
   return PRODUCTION_API_BASE_URL;
@@ -59,6 +59,31 @@ const parseApiResponse = async (response) => {
   } catch {
     return { message: rawText };
   }
+};
+
+const mapAuthErrorMessage = (response, payload, fallback) => {
+  const raw = String(payload?.message || '').trim();
+  if (raw) {
+    if (/not_found|the page could not be found|cannot\s+(post|get)/i.test(raw)) {
+      return 'Không tìm thấy API backend. Vui lòng kiểm tra URL backend hoặc biến VITE_API_BASE_URL.';
+    }
+    return raw;
+  }
+
+  if (response.status === 409) {
+    return 'Tài khoản này đã được đăng ký rồi.';
+  }
+  if (response.status === 401) {
+    return 'Email hoặc mật khẩu không đúng.';
+  }
+  if (response.status === 403) {
+    return 'Tài khoản của bạn đã bị khóa hoặc không có quyền truy cập.';
+  }
+  if (response.status >= 500) {
+    return 'Máy chủ đang bận. Vui lòng thử lại sau.';
+  }
+
+  return fallback;
 };
 
 const defaultQuantity = (stock) => {
@@ -435,7 +460,7 @@ function App() {
       const data = await parseApiResponse(response);
 
       if (!response.ok) {
-        setLoginError(data.message || 'Đăng nhập thất bại');
+        setLoginError(mapAuthErrorMessage(response, data, 'Đăng nhập thất bại'));
         return;
       }
 
@@ -500,7 +525,7 @@ function App() {
       const data = await parseApiResponse(response);
 
       if (!response.ok) {
-        setLoginError(data.message || 'Đăng ký thất bại');
+        setLoginError(mapAuthErrorMessage(response, data, 'Đăng ký thất bại'));
         return;
       }
 
@@ -676,7 +701,7 @@ function App() {
       const data = await parseApiResponse(response);
 
       if (!response.ok) {
-        console.error('Đăng nhập thất bại:', data.message);
+        console.error('Đăng nhập thất bại:', mapAuthErrorMessage(response, data, 'Đăng nhập thất bại'));
         return false;
       }
 
@@ -842,6 +867,7 @@ function App() {
         onGoLogin={handleGoLogin}
         cartCount={visibleCartCount}
         onSubmit={handleRegisterSubmit}
+        errorMessage={loginError}
       />
     );
   }
