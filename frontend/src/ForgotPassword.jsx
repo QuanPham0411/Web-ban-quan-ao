@@ -230,6 +230,18 @@ function ForgotPassword({
     setOtpSecondsLeft(OTP_ROTATE_SECONDS);
   };
 
+  const handleGoToOtpStep = () => {
+    const normalizedEmail = normalizeEmail(email);
+    if (!normalizedEmail) {
+      setError('Vui lòng nhập email trước khi nhập OTP.');
+      return;
+    }
+
+    setError('');
+    setMessage('Nếu bạn đã nhận OTP qua email, hãy nhập OTP để tiếp tục.');
+    setStep('otp');
+  };
+
   return (
     <div className="auth-page">
       <header className="top-header auth-header">
@@ -271,6 +283,10 @@ function ForgotPassword({
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
               />
+
+              <button type="button" className="auth-back-btn" onClick={handleGoToOtpStep} disabled={isLoading}>
+                Tôi đã nhận OTP
+              </button>
             </>
           )}
 
