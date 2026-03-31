@@ -59,6 +59,10 @@ const sendOtpEmail = async (email, otp) => {
 const mapOtpMailErrorMessage = (err) => {
   const msg = String(err?.message || '');
 
+  if (/Connection timeout|ETIMEDOUT|timeout/i.test(msg)) {
+    return 'Không thể gửi OTP: kết nối SMTP bị timeout. Vui lòng thử lại sau.';
+  }
+
   if (/Invalid login|BadCredentials|535-5\.7\.8|Username and Password not accepted/i.test(msg)) {
     return 'Không thể gửi OTP: tài khoản Gmail hoặc App Password chưa đúng. Hãy kiểm tra SMTP_USER và SMTP_PASS (App Password 16 ký tự).';
   }
@@ -188,7 +192,7 @@ router.post('/forgot-password/request', async (req, res) => {
       expiresInSeconds: Math.floor(OTP_EXPIRE_MS / 1000),
     });
   } catch (err) {
-    return res.status(500).json({ message: 'Lỗi máy chủ: ' + err.message });
+    return res.status(500).json({ message: mapOtpMailErrorMessage(err) });
   }
 });
 
@@ -221,7 +225,7 @@ router.post('/forgot-password/resend', async (req, res) => {
       expiresInSeconds: Math.floor(OTP_EXPIRE_MS / 1000),
     });
   } catch (err) {
-    return res.status(500).json({ message: 'Lỗi máy chủ: ' + err.message });
+    return res.status(500).json({ message: mapOtpMailErrorMessage(err) });
   }
 });
 
