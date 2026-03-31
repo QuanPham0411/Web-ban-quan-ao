@@ -4,10 +4,38 @@ const cors = require('cors');
 
 const app = express();
 const DB_STRICT_MODE = process.env.DB_STRICT_MODE !== 'false';
+const normalizeOrigin = (origin) => String(origin || '').trim().replace(/\/$/, '').toLowerCase();
+
 const allowedOrigins = String(process.env.CORS_ORIGIN || '')
     .split(',')
-    .map((origin) => origin.trim())
+    .map((origin) => normalizeOrigin(origin))
     .filter(Boolean);
+
+const isOriginAllowed = (origin) => {
+    const normalizedOrigin = normalizeOrigin(origin);
+
+    if (!normalizedOrigin) {
+        return true;
+    }
+
+    if (allowedOrigins.length === 0 || allowedOrigins.includes('*')) {
+        return true;
+    }
+
+    if (allowedOrigins.includes(normalizedOrigin)) {
+        return true;
+    }
+
+    // Support wildcard domains, e.g. "*.vercel.app"
+    return allowedOrigins.some((allowedOrigin) => {
+        if (!allowedOrigin.startsWith('*.')) {
+            return false;
+        }
+
+        const suffix = allowedOrigin.slice(1); // keep leading dot
+        return normalizedOrigin.endsWith(suffix);
+    });
+};
 
 app.use(cors({
     origin(origin, callback) {
@@ -15,7 +43,7 @@ app.use(cors({
             return callback(null, true);
         }
 
-        if (allowedOrigins.length === 0 || allowedOrigins.includes('*') || allowedOrigins.includes(origin)) {
+        if (isOriginAllowed(origin)) {
             return callback(null, true);
         }
 
