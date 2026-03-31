@@ -27,7 +27,9 @@ const getTransporter = () => {
   }
 
   if (!transporter) {
-    const secure = SMTP_SECURE || SMTP_PORT === 465;
+    const isPort465 = SMTP_PORT === 465;
+    const isPort587 = SMTP_PORT === 587;
+    const secure = isPort465 ? true : (isPort587 ? false : SMTP_SECURE);
     transporter = nodemailer.createTransport({
       host: SMTP_HOST,
       port: SMTP_PORT,

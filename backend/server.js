@@ -26,6 +26,16 @@ const isOriginAllowed = (origin) => {
         return true;
     }
 
+    // Always allow Vercel preview/production domains for this frontend deployment flow.
+    try {
+        const originUrl = new URL(normalizedOrigin);
+        if (originUrl.hostname === 'vercel.app' || originUrl.hostname.endsWith('.vercel.app')) {
+            return true;
+        }
+    } catch {
+        // Ignore URL parse failures and continue checks.
+    }
+
     // Support wildcard domains, e.g. "*.vercel.app"
     return allowedOrigins.some((allowedOrigin) => {
         if (!allowedOrigin.startsWith('*.')) {
@@ -47,7 +57,8 @@ app.use(cors({
             return callback(null, true);
         }
 
-        return callback(new Error(`Origin ${origin} không được phép bởi CORS.`));
+        // Reject CORS without turning it into a 500 Internal Server Error.
+        return callback(null, false);
     },
     credentials: true,
 }));
