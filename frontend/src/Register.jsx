@@ -3,23 +3,44 @@ import CartIconButton from './components/CartIconButton';
 
 const normalizePhoneInput = (value) => String(value || '').replace(/\D/g, '').slice(0, 10);
 const isValidPhone = (value) => /^\d{10}$/.test(String(value || ''));
+const isStrongPassword = (value) => /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z0-9]).{8,}$/.test(String(value || ''));
 
 function Register({ onGoHome, onGoProducts, onGoOffers, onGoUsers, onGoCart, onGoLogin, cartCount, onSubmit }) {
   const [form, setForm] = useState({ fullName: '', email: '', phone: '', password: '' });
   const [phoneError, setPhoneError] = useState('');
+  const [passwordError, setPasswordError] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
+    setPhoneError('');
+    setPasswordError('');
+
     if (!isValidPhone(form.phone)) {
       setPhoneError('Số điện thoại phải đủ 10 số và không chứa ký tự khác.');
       return;
     }
-    onSubmit(form);
+    if (!isStrongPassword(form.password)) {
+      setPasswordError('Mật khẩu cần ít nhất 8 ký tự, gồm chữ hoa, chữ thường, số và ký tự đặc biệt.');
+      return;
+    }
+
+    setIsLoading(true);
+    try {
+      await onSubmit(form);
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   const handlePhoneChange = (value) => {
     setForm({ ...form, phone: normalizePhoneInput(value) });
     setPhoneError('');
+  };
+
+  const handlePasswordChange = (value) => {
+    setForm({ ...form, password: value });
+    setPasswordError('');
   };
 
   return (
@@ -91,13 +112,14 @@ function Register({ onGoHome, onGoProducts, onGoOffers, onGoUsers, onGoCart, onG
             type="password"
             placeholder="••••••••"
             required
-            minLength={6}
+            minLength={8}
             value={form.password}
-            onChange={(e) => setForm({ ...form, password: e.target.value })}
+            onChange={(e) => handlePasswordChange(e.target.value)}
           />
+          {passwordError ? <p className="auth-form-error">{passwordError}</p> : null}
 
-          <button className="auth-submit" type="submit">
-            Tạo tài khoản
+          <button className="auth-submit" type="submit" disabled={isLoading}>
+            {isLoading ? 'Đang tạo tài khoản...' : 'Tạo tài khoản'}
           </button>
 
           <p className="auth-switch">

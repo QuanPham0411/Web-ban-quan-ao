@@ -2,10 +2,37 @@ import { useEffect, useState } from 'react';
 import CartIconButton from './components/CartIconButton';
 
 const normalizeEmail = (email) => String(email || '').trim().toLowerCase();
-const OTP_ROTATE_SECONDS = 30;
+const PASSWORD_REGEX = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z0-9]).{8,}$/;
+const OTP_ROTATE_SECONDS = 300;
+const PRODUCTION_API_BASE_URL = 'https://api-ban-quan-ao-backend.onrender.com';
 
-const generateOTP = () => {
-  return String(Math.floor(Math.random() * 900000) + 100000);
+const resolveApiBaseUrl = () => {
+  const envBaseUrl = String(import.meta.env.VITE_API_BASE_URL || '').trim().replace(/\/$/, '');
+
+  if (envBaseUrl) {
+    return envBaseUrl;
+  }
+
+  if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+    return 'http://localhost:3000';
+  }
+
+  return PRODUCTION_API_BASE_URL;
+};
+
+const API_BASE_URL = resolveApiBaseUrl();
+
+const parseApiResponse = async (response) => {
+  const rawText = await response.text();
+  if (!rawText) {
+    return {};
+  }
+
+  try {
+    return JSON.parse(rawText);
+  } catch {
+    return { message: rawText };
+  }
 };
 
 function ForgotPassword({
@@ -16,33 +43,28 @@ function ForgotPassword({
   onGoCart,
   onGoLogin,
   cartCount,
-  customers,
-  onUpdateCustomer,
 }) {
-  const [step, setStep] = useState('email'); // 'email', 'otp', 'password'
+  const [step, setStep] = useState('email');
   const [email, setEmail] = useState('');
   const [otp, setOtp] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [generatedOtp, setGeneratedOtp] = useState('');
-  const [selectedCustomer, setSelectedCustomer] = useState(null);
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
   const [otpSecondsLeft, setOtpSecondsLeft] = useState(OTP_ROTATE_SECONDS);
+  const [isLoading, setIsLoading] = useState(false);
 
   useEffect(() => {
-    if (step !== 'otp') {
+    if (step !== 'otp' || !otpSecondsLeft) {
       return undefined;
     }
 
     const timerId = setInterval(() => {
       setOtpSecondsLeft((previousSeconds) => {
         if (previousSeconds <= 1) {
-          const refreshedOtp = generateOTP();
-          setGeneratedOtp(refreshedOtp);
-          setOtp('');
-          setMessage(`OTP mới đã được tạo: ${refreshedOtp}`);
-          return OTP_ROTATE_SECONDS;
+          setMessage('OTP đã hết hạn. Vui lòng quay lại để tạo OTP mới.');
+          return 0;
         }
 
         return previousSeconds - 1;
@@ -54,7 +76,7 @@ function ForgotPassword({
     };
   }, [step]);
 
-  const handleEmailSubmit = (e) => {
+  const handleEmailSubmit = async (e) => {
     e.preventDefault();
     setError('');
     setMessage('');
@@ -65,20 +87,30 @@ function ForgotPassword({
       return;
     }
 
-    const customer = customers.find((c) => normalizeEmail(c.email) === normalizedEmail);
+    setIsLoading(true);
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/auth/forgot-password/request`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: normalizedEmail }),
+      });
+      const data = await parseApiResponse(response);
 
-    if (!customer) {
-      setError('Email này chưa đăng ký tài khoản');
-      return;
+      if (!response.ok) {
+        setError(data.message || 'Không thể tạo OTP.');
+        return;
+      }
+
+      setGeneratedOtp(String(data.otp || ''));
+      setStep('otp');
+      setOtp('');
+      setOtpSecondsLeft(Number(data.expiresInSeconds || OTP_ROTATE_SECONDS));
+      setMessage(`OTP của bạn là: ${String(data.otp || '')}`);
+    } catch (err) {
+      setError(`Lỗi kết nối: ${err.message}`);
+    } finally {
+      setIsLoading(false);
     }
-
-    // Sinh OTP
-    const newOtp = generateOTP();
-    setGeneratedOtp(newOtp);
-    setSelectedCustomer(customer);
-    setStep('otp');
-    setOtpSecondsLeft(OTP_ROTATE_SECONDS);
-    setMessage(`OTP của bạn là: ${newOtp}`);
   };
 
   const handleOtpSubmit = (e) => {
@@ -100,7 +132,7 @@ function ForgotPassword({
     setMessage('OTP xác minh thành công! Vui lòng đặt mật khẩu mới');
   };
 
-  const handlePasswordSubmit = (e) => {
+  const handlePasswordSubmit = async (e) => {
     e.preventDefault();
     setError('');
     setMessage('');
@@ -110,8 +142,8 @@ function ForgotPassword({
       return;
     }
 
-    if (newPassword.length < 6) {
-      setError('Mật khẩu phải có ít nhất 6 ký tự');
+    if (!PASSWORD_REGEX.test(newPassword)) {
+      setError('Mật khẩu cần ít nhất 8 ký tự, gồm chữ hoa, chữ thường, số và ký tự đặc biệt.');
       return;
     }
 
@@ -120,18 +152,33 @@ function ForgotPassword({
       return;
     }
 
-    // Cập nhật mật khẩu cho khách hàng
-    if (selectedCustomer) {
-      onUpdateCustomer({
-        ...selectedCustomer,
-        password: newPassword,
+    setIsLoading(true);
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/auth/forgot-password/reset`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: normalizeEmail(email),
+          otp,
+          newPassword,
+        }),
       });
-    }
+      const data = await parseApiResponse(response);
 
-    setMessage('Mật khẩu đã được cập nhật thành công!');
-    setTimeout(() => {
-      onGoLogin();
-    }, 2000);
+      if (!response.ok) {
+        setError(data.message || 'Không thể cập nhật mật khẩu');
+        return;
+      }
+
+      setMessage('Mật khẩu đã được cập nhật thành công!');
+      setTimeout(() => {
+        onGoLogin();
+      }, 1500);
+    } catch (err) {
+      setError(`Lỗi kết nối: ${err.message}`);
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   const handleBack = () => {
@@ -141,7 +188,6 @@ function ForgotPassword({
     setNewPassword('');
     setConfirmPassword('');
     setGeneratedOtp('');
-    setSelectedCustomer(null);
     setError('');
     setMessage('');
     setOtpSecondsLeft(OTP_ROTATE_SECONDS);
@@ -193,7 +239,7 @@ function ForgotPassword({
 
           {step === 'otp' && (
             <>
-              <p>Mã OTP được gửi đến email <strong>{selectedCustomer?.email}</strong></p>
+              <p>Mã OTP được tạo cho email <strong>{email}</strong></p>
 
               <div className="otp-display-box">
                 <p>OTP của bạn:</p>
@@ -224,7 +270,7 @@ function ForgotPassword({
                 type="password"
                 placeholder="••••••••"
                 required
-                minLength={6}
+                minLength={8}
                 value={newPassword}
                 onChange={(e) => setNewPassword(e.target.value)}
               />
@@ -235,7 +281,7 @@ function ForgotPassword({
                 type="password"
                 placeholder="••••••••"
                 required
-                minLength={6}
+                minLength={8}
                 value={confirmPassword}
                 onChange={(e) => setConfirmPassword(e.target.value)}
               />
@@ -245,10 +291,10 @@ function ForgotPassword({
           {error && <p className="auth-error">{error}</p>}
           {message && <p className="auth-message">{message}</p>}
 
-          <button className="auth-submit" type="submit">
+          <button className="auth-submit" type="submit" disabled={isLoading || (step === 'otp' && otpSecondsLeft === 0)}>
             {step === 'email' && 'Tiếp tục'}
             {step === 'otp' && 'Xác minh OTP'}
-            {step === 'password' && 'Cập nhật mật khẩu'}
+            {step === 'password' && (isLoading ? 'Đang cập nhật...' : 'Cập nhật mật khẩu')}
           </button>
 
           {step !== 'email' && (

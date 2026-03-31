@@ -1,9 +1,8 @@
-require('dotenv').config();
+require('dotenv').config({ path: require('path').join(__dirname, '.env') });
 const express = require('express');
 const cors = require('cors');
 
 const app = express();
-const USE_MOCK_DATA = process.env.USE_MOCK_DATA === 'true';
 const DB_STRICT_MODE = process.env.DB_STRICT_MODE !== 'false';
 const allowedOrigins = String(process.env.CORS_ORIGIN || '')
     .split(',')
@@ -44,15 +43,6 @@ app.get('/', (req, res) => {
 });
 
 app.get('/api/health/db', async (req, res) => {
-    if (USE_MOCK_DATA) {
-        return res.json({
-            ok: true,
-            mode: 'mock',
-            db: null,
-            message: 'Backend đang chạy với mock data.',
-        });
-    }
-
     try {
         const [rows] = await pool.query('SELECT NOW() AS now');
         return res.json({
@@ -90,20 +80,16 @@ app.use((req, res) => {
 const PORT = process.env.PORT || 5000;
 
 const startServer = async () => {
-    if (!USE_MOCK_DATA) {
-        try {
-            await verifyDatabaseConnection();
-            console.log('Kết nối MySQL thành công.', getDbPublicConfig());
-        } catch (err) {
-            console.error('Không thể kết nối MySQL:', err.message);
+    try {
+        await verifyDatabaseConnection();
+        console.log('Kết nối MySQL thành công.', getDbPublicConfig());
+    } catch (err) {
+        console.error('Không thể kết nối MySQL:', err.message);
 
-            if (DB_STRICT_MODE) {
-                console.error('DB_STRICT_MODE=true nên server sẽ dừng để tránh chạy sai cấu hình.');
-                process.exit(1);
-            }
+        if (DB_STRICT_MODE) {
+            console.error('DB_STRICT_MODE=true nên server sẽ dừng để tránh chạy sai cấu hình.');
+            process.exit(1);
         }
-    } else {
-        console.log('Đang chạy ở chế độ mock data (USE_MOCK_DATA=true).');
     }
 
     app.listen(PORT, () => {

@@ -30,6 +30,19 @@ const ADMIN_EMAIL = 'admin@sunnywear.com';
 const ADMIN_PASSWORD = 'Admin@123';
 const normalizeEmail = (email) => String(email || '').trim().toLowerCase();
 
+const parseApiResponse = async (response) => {
+  const rawText = await response.text();
+  if (!rawText) {
+    return {};
+  }
+
+  try {
+    return JSON.parse(rawText);
+  } catch {
+    return { message: rawText };
+  }
+};
+
 const defaultQuantity = (stock) => {
   if (stock === 'Sắp cháy hàng') return 3;
   if (stock === 'Sắp hết hàng') return 8;
@@ -384,75 +397,113 @@ function App() {
     );
   };
 
-  const handleLoginSubmit = ({ email, password }) => {
+  const handleLoginSubmit = async ({ email, password }) => {
     const normalizedEmail = normalizeEmail(email);
-    const rawPassword = String(password || '');
 
-    if (normalizedEmail === normalizeEmail(ADMIN_EMAIL) && password === ADMIN_PASSWORD) {
+    if (!email || !password) {
+      setLoginError('Vui lòng nhập email và mật khẩu.');
+      return;
+    }
+
+    try {
       setLoginError('');
-      const adminData = { email: normalizedEmail, loggedInAt: Date.now() };
-      localStorage.setItem(ADMIN_AUTH_STORAGE_KEY, JSON.stringify(adminData));
-      setAdminAuth({ isAdmin: true, email: normalizedEmail });
-      window.location.hash = '#admin';
-      return;
+      // Gọi API backend để verify email/password từ database
+      const response = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: normalizedEmail, password }),
+      });
+
+      const data = await parseApiResponse(response);
+
+      if (!response.ok) {
+        setLoginError(data.message || 'Đăng nhập thất bại');
+        return;
+      }
+
+      const userRole = data.user?.role || 'customer';
+
+      // Nếu user có role admin hoặc staff, redirect tới admin page
+      if (userRole === 'admin' || userRole === 'staff') {
+        const adminData = {
+          email: normalizedEmail,
+          token: data.token,
+          role: userRole,
+          fullName: data.user?.fullName || '',
+          loggedInAt: Date.now(),
+        };
+        localStorage.setItem(ADMIN_AUTH_STORAGE_KEY, JSON.stringify(adminData));
+        setAdminAuth({ isAdmin: true, email: normalizedEmail });
+        window.location.hash = '#admin';
+        return;
+      }
+
+      // Nếu customer, login như bình thường
+      const authData = {
+        label: normalizedEmail.split('@')[0] || data.user?.fullName || 'Khách hàng',
+        mode: 'login',
+        email: normalizedEmail,
+        token: data.token,
+        role: userRole,
+        loggedInAt: Date.now(),
+      };
+
+      localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(authData));
+      setAuthState({ isLoggedIn: true, accountLabel: authData.label, email: normalizedEmail });
+      setLoginError('');
+      handleGoHome();
+    } catch (err) {
+      setLoginError(`Lỗi kết nối: ${err.message}`);
     }
-
-    const existingCustomer = sharedCustomers.find(
-      (customer) => normalizeEmail(customer.email) === normalizedEmail,
-    );
-
-    if (!existingCustomer) {
-      setLoginError('Email này chưa đăng ký tài khoản.');
-      return;
-    }
-
-    if (!existingCustomer.password) {
-      setLoginError('Tài khoản này chưa có mật khẩu. Vui lòng dùng Quên mật khẩu để thiết lập mật khẩu.');
-      return;
-    }
-
-    if (existingCustomer.password !== rawPassword) {
-      setLoginError('Mật khẩu không chính xác.');
-      return;
-    }
-
-    setLoginError('');
-    handleAuth('login');
-
-    const emailPrefix = normalizedEmail.split('@')[0];
-    const label = existingCustomer.name?.trim() || emailPrefix || 'Khách hàng';
-    const savedAuth = localStorage.getItem(AUTH_STORAGE_KEY);
-    const parsedAuth = savedAuth ? JSON.parse(savedAuth) : {};
-    const authData = {
-      ...parsedAuth,
-      label,
-      mode: 'login',
-      email: normalizedEmail,
-    };
-
-    localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(authData));
-    setAuthState({ isLoggedIn: true, accountLabel: authData.label, email: normalizedEmail });
-    handleGoHome();
   };
 
-  const handleRegisterSubmit = ({ fullName, email, phone, password }) => {
-    setLoginError('');
-    handleAuth('register');
-    upsertCustomer({ email, name: fullName, phone, password });
+  const handleRegisterSubmit = async ({ fullName, email, phone, password }) => {
+    if (!fullName || !email || !password) {
+      setLoginError('Vui lòng điền đầy đủ thông tin bắt buộc');
+      return;
+    }
 
-    const label = fullName?.trim() || 'Thành viên mới';
-    const savedAuth = localStorage.getItem(AUTH_STORAGE_KEY);
-    const parsedAuth = savedAuth ? JSON.parse(savedAuth) : {};
-    const authData = {
-      ...parsedAuth,
-      label,
-      mode: 'register',
-      email: normalizeEmail(email),
-    };
+    const normalizedEmail = normalizeEmail(email);
 
-    localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(authData));
-    setAuthState({ isLoggedIn: true, accountLabel: authData.label, email: normalizeEmail(email) });
-    handleGoHome();
+    try {
+      setLoginError('');
+      // Gọi API backend để register user
+      const response = await fetch('/api/auth/register', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          fullName: fullName.trim(),
+          email: normalizedEmail,
+          phone: phone || null,
+          password,
+        }),
+      });
+
+      const data = await parseApiResponse(response);
+
+      if (!response.ok) {
+        setLoginError(data.message || 'Đăng ký thất bại');
+        return;
+      }
+
+      // Lưu token và user info
+      const authData = {
+        label: fullName?.trim() || 'Thành viên mới',
+        mode: 'register',
+        email: normalizedEmail,
+        token: data.token,
+        role: 'customer',
+        fullName: fullName.trim(),
+        loggedInAt: Date.now(),
+      };
+
+      localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(authData));
+      setAuthState({ isLoggedIn: true, accountLabel: authData.label, email: normalizedEmail });
+      setLoginError('');
+      handleGoHome();
+    } catch (err) {
+      setLoginError(`Lỗi kết nối: ${err.message}`);
+    }
   };
 
   const handleLogout = () => {
@@ -588,18 +639,52 @@ function App() {
     setSharedOrders((previous) => previous.filter((order) => order.id !== orderId));
   };
 
-  const handleAdminLoginSubmit = ({ email, password }) => {
+  const handleAdminLoginSubmit = async ({ email, password }) => {
     const normalizedEmail = normalizeEmail(email);
 
-    if (normalizedEmail === normalizeEmail(ADMIN_EMAIL) && password === ADMIN_PASSWORD) {
-      const adminData = { email: normalizedEmail, loggedInAt: Date.now() };
+    if (!email || !password) {
+      console.error('Email và mật khẩu không được để trống');
+      return false;
+    }
+
+    try {
+      // Gọi API backend để verify email/password từ database
+      const response = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: normalizedEmail, password }),
+      });
+
+      const data = await parseApiResponse(response);
+
+      if (!response.ok) {
+        console.error('Đăng nhập thất bại:', data.message);
+        return false;
+      }
+
+      // Kiểm tra xem user có phải admin không
+      const userRole = data.user?.role || 'customer';
+      if (userRole !== 'admin' && userRole !== 'staff') {
+        console.error('Chỉ admin hoặc staff mới được truy cập.');
+        return false;
+      }
+
+      // Lưu JWT token và admin info
+      const adminData = {
+        email: normalizedEmail,
+        token: data.token,
+        role: userRole,
+        fullName: data.user?.fullName || '',
+        loggedInAt: Date.now(),
+      };
       localStorage.setItem(ADMIN_AUTH_STORAGE_KEY, JSON.stringify(adminData));
       setAdminAuth({ isAdmin: true, email: normalizedEmail });
       window.location.hash = '#admin';
       return true;
+    } catch (err) {
+      console.error('Lỗi đăng nhập admin:', err.message);
+      return false;
     }
-
-    return false;
   };
 
   const handleAdminLogout = () => {
@@ -753,8 +838,6 @@ function App() {
         onGoCart={handleGoCart}
         onGoLogin={handleGoLogin}
         cartCount={visibleCartCount}
-        customers={sharedCustomers}
-        onUpdateCustomer={handleUpdateCustomer}
       />
     );
   }
