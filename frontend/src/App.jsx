@@ -15,6 +15,24 @@ import Admin from './Admin';
 import AdminLogin from './AdminLogin';
 import './styles/App.css';
 
+const PRODUCTION_API_BASE_URL = 'https://api-ban-quan-ao-backend.onrender.com';
+
+const resolveApiBaseUrl = () => {
+  const envBaseUrl = String(import.meta.env.VITE_API_BASE_URL || '').trim().replace(/\/$/, '');
+
+  if (envBaseUrl) {
+    return envBaseUrl;
+  }
+
+  if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+    return '';
+  }
+
+  return PRODUCTION_API_BASE_URL;
+};
+
+const API_BASE_URL = resolveApiBaseUrl();
+
 const AUTH_STORAGE_KEY = 'sunnywear-auth';
 const LAST_VISIT_STORAGE_KEY = 'sunnywear-last-visit';
 const CART_STORAGE_KEY = 'sunnywear-cart';
@@ -408,7 +426,7 @@ function App() {
     try {
       setLoginError('');
       // Gọi API backend để verify email/password từ database
-      const response = await fetch('/api/auth/login', {
+      const response = await fetch(`${API_BASE_URL}/api/auth/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email: normalizedEmail, password }),
@@ -468,7 +486,7 @@ function App() {
     try {
       setLoginError('');
       // Gọi API backend để register user
-      const response = await fetch('/api/auth/register', {
+      const response = await fetch(`${API_BASE_URL}/api/auth/register`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -649,7 +667,7 @@ function App() {
 
     try {
       // Gọi API backend để verify email/password từ database
-      const response = await fetch('/api/auth/login', {
+      const response = await fetch(`${API_BASE_URL}/api/auth/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email: normalizedEmail, password }),
