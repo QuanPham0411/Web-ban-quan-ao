@@ -529,21 +529,11 @@ function App() {
         return;
       }
 
-      // Lưu token và user info
-      const authData = {
-        label: fullName?.trim() || 'Thành viên mới',
-        mode: 'register',
-        email: normalizedEmail,
-        token: data.token,
-        role: 'customer',
-        fullName: fullName.trim(),
-        loggedInAt: Date.now(),
-      };
-
-      localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(authData));
-      setAuthState({ isLoggedIn: true, accountLabel: authData.label, email: normalizedEmail });
-      setLoginError('');
-      handleGoHome();
+      // Đăng ký thành công nhưng yêu cầu người dùng đăng nhập lại
+      localStorage.removeItem(AUTH_STORAGE_KEY);
+      setAuthState({ isLoggedIn: false, accountLabel: 'Khách hàng', email: '' });
+      window.alert('Đăng ký thành công. Vui lòng đăng nhập để tiếp tục.');
+      window.location.hash = '#login';
     } catch (err) {
       setLoginError(`Lỗi kết nối: ${err.message}`);
     }
