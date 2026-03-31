@@ -499,8 +499,8 @@ function Checkout({
                 {!addressSelection.provinceCode
                   ? 'Vui lòng chọn Tỉnh/Thành trước'
                   : districts.length === 0
-                  ? 'Không có dữ liệu quận/huyện'
-                  : 'Chọn Quận/Huyện'}
+                    ? 'Không có dữ liệu quận/huyện'
+                    : 'Chọn Quận/Huyện'}
               </option>
               {districts.map((district) => (
                 <option key={district.code} value={district.code}>
@@ -521,8 +521,8 @@ function Checkout({
                 {!addressSelection.districtCode
                   ? 'Vui lòng chọn Quận/Huyện trước'
                   : wards.length === 0
-                  ? 'Không có dữ liệu phường/xã'
-                  : 'Chọn Phường/Xã'}
+                    ? 'Không có dữ liệu phường/xã'
+                    : 'Chọn Phường/Xã'}
               </option>
               {wards.map((ward) => (
                 <option key={ward.code} value={ward.code}>
@@ -550,7 +550,52 @@ function Checkout({
             >
               <option value="cod">Thanh toán khi nhận hàng (COD)</option>
               <option value="bank">Chuyển khoản ngân hàng</option>
+              <option value="vnpay">Thanh toán qua VNPay (QR Code)</option>
             </select>
+
+            {form.paymentMethod === 'vnpay' && (
+              <div className="vnpay-qr-container" style={{ marginTop: '20px', padding: '20px', border: '2px dashed #005baa', borderRadius: '12px', textAlign: 'center', background: '#f0f9ff' }}>
+                <h4 style={{ color: '#005baa', marginBottom: '10px' }}>Quét mã VNPay để thanh toán</h4>
+                <div style={{ background: '#fff', padding: '10px', display: 'inline-block', borderRadius: '8px', boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }}>
+                  <img
+                    src={`https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=VNPAY_PAYMENT_FOR_${totalPrice}_VND`}
+                    alt="VNPay QR Code"
+                    style={{ width: '200px', height: '200px' }}
+                  />
+                </div>
+                <p style={{ marginTop: '10px', fontSize: '0.9rem', color: '#475569' }}>
+                  Sử dụng ứng dụng ngân hàng hoặc ví VNPay để quét mã.<br />
+                  Số tiền: <strong>{formatPrice(finalTotal)}</strong>
+                </p>
+                <div style={{ marginTop: '15px', padding: '10px', background: '#e0f2fe', borderRadius: '8px' }}>
+
+                  <button
+                    type="button"
+                    className="btn-primary"
+                    style={{ background: '#005baa', width: '100%' }}
+                    onClick={() => {
+                      onPlaceOrder({
+                        ...form,
+                        paymentMethod: 'vnpay',
+                        status: 'Đã thanh toán bằng VNPay thành công',
+                        address: [
+                          form.address.trim(),
+                          wards.find(w => w.code === addressSelection.wardCode)?.name,
+                          districts.find(d => d.code === addressSelection.districtCode)?.name,
+                          provinces.find(p => p.code === addressSelection.provinceCode)?.name
+                        ].filter(Boolean).join(', '),
+                        voucherCode: activeVoucher ? activeVoucher.voucher.code : '',
+                        promotionTitle: autoPromotion?.promotion?.title || '',
+                        discountAmount: totalDiscount,
+                        finalTotal,
+                      });
+                    }}
+                  >
+                    Xác nhận đã quét & thanh toán thành công
+                  </button>
+                </div>
+              </div>
+            )}
 
             <label htmlFor="checkout-note">Ghi chú</label>
             <textarea

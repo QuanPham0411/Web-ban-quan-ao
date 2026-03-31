@@ -1,4 +1,4 @@
-﻿import { useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { catalogProducts } from './catalog';
 import Home from './Home';
 import Products from './Products';
@@ -38,7 +38,15 @@ const defaultQuantity = (stock) => {
   return 60;
 };
 
-const initialProducts = catalogProducts.map((p) => ({ ...p, quantity: defaultQuantity(p.stockLabel) }));
+const initialProducts = catalogProducts.map((p) => {
+  const priceNumber = Number(String(p.price || '0').replace(/\./g, ''));
+  return {
+    ...p,
+    priceNumber,
+    priceText: `${p.price}đ`,
+    quantity: defaultQuantity(p.stockLabel),
+  };
+});
 
 const seedCustomerEmails = new Set([
   'nguyenvana@email.com',
@@ -57,6 +65,10 @@ const formatDate = (date) =>
   `${String(date.getDate()).padStart(2, '0')}/${String(date.getMonth() + 1).padStart(2, '0')}/${date.getFullYear()}`;
 
 const getCurrentPage = () => {
+  if (window.location.hash.startsWith('#products/')) {
+    return 'product-detail';
+  }
+
   if (window.location.hash.startsWith('#products')) {
     return 'products';
   }
@@ -93,10 +105,6 @@ const getCurrentPage = () => {
     return 'checkout';
   }
 
-  if (window.location.hash.startsWith('#product/')) {
-    return 'product-detail';
-  }
-
   if (window.location.hash.startsWith('#admin-login')) {
     return 'admin-login';
   }
@@ -111,11 +119,11 @@ const getCurrentPage = () => {
 const getCurrentProductId = () => {
   const hashValue = window.location.hash || '';
 
-  if (!hashValue.startsWith('#product/')) {
+  if (!hashValue.startsWith('#products/')) {
     return null;
   }
 
-  return hashValue.slice('#product/'.length) || null;
+  return hashValue.slice('#products/'.length) || null;
 };
 
 const getInitialCartItems = () => {
@@ -547,7 +555,7 @@ function App() {
       items: orderItems,
       product: productLabel,
       amount: `${finalTotal.toLocaleString('vi-VN')}đ`,
-      status: 'Chờ xác nhận',
+      status: checkoutData?.status || 'Chờ xác nhận',
       date: formatDate(new Date()),
       voucherCode: checkoutData?.voucherCode || '',
       promotionTitle: checkoutData?.promotionTitle || '',
@@ -611,7 +619,7 @@ function App() {
   const handleGoProductDetail = (product) => {
     setSelectedProduct(product);
     localStorage.setItem(PRODUCT_DETAIL_STORAGE_KEY, JSON.stringify(product));
-    window.location.hash = `#product/${product.id}`;
+    window.location.hash = `#products/${product.id}`;
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
@@ -619,6 +627,8 @@ function App() {
     if (!authState.isLoggedIn) {
       return;
     }
+
+    const addAmount = Number(product.customQuantity || 1);
 
     setCartItems((previous) => {
       const existingItem = previous.find((item) => item.id === product.id);
@@ -628,7 +638,7 @@ function App() {
           item.id === product.id
             ? {
                 ...item,
-                quantity: item.quantity + 1,
+                quantity: item.quantity + addAmount,
               }
             : item,
         );
@@ -638,7 +648,7 @@ function App() {
         ...previous,
         {
           ...product,
-          quantity: 1,
+          quantity: addAmount,
         },
       ];
     });
@@ -853,8 +863,11 @@ function App() {
         onGoProducts={handleGoProducts}
         onGoOffers={handleGoOffers}
         onGoCart={handleGoCart}
+        onGoCheckout={handleGoCheckout}
+        onGoProductDetail={handleGoProductDetail}
         onGoLogin={handleGoLogin}
         onGoRegister={handleGoRegister}
+        products={sharedProducts}
       />
     );
   }
@@ -889,6 +902,8 @@ function App() {
       onGoRegister={handleGoRegister}
       onAddToCart={handleAddToCart}
       cartCount={visibleCartCount}
+      products={sharedProducts}
+      onGoProductDetail={handleGoProductDetail}
     />
   );
 }

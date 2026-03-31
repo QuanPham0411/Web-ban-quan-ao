@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import ProductCard from './components/ProductCard';
 import CartIconButton from './components/CartIconButton';
 import ScrollTopButton from './components/ScrollTopButton';
 import { categoryConfigs, filterProductsBySearch } from './catalog';
@@ -89,11 +90,11 @@ function Products({
 
       <section className="catalog-hero">
         <div>
-          <span className="hero-badge">Danh mục đầy đủ của shop</span>
-          <h1>Trang Sản Phẩm SunnyWear</h1>
+          <span className="hero-badge">Danh mục shop</span>
+          <h1>Bộ sưu tập SunnyWear</h1>
           <p>
-            Tổng hợp khoảng 200 mặt hàng cho phụ nữ, đàn ông, trẻ em và đồ lót/mặc nhà.
-            Bạn có thể lọc nhanh theo từng nhóm để xem đầy đủ món shop đang bán.
+            Hàng trăm mẫu thời trang mới nhất được cập nhật mỗi ngày.
+            Lọc nhanh theo sở thích và phong cách của bạn ngay bên dưới.
           </p>
         </div>
         <div className="catalog-hero-stats">
@@ -103,23 +104,13 @@ function Products({
           </div>
           <div className="catalog-stat-card">
             <strong>4</strong>
-            <span>Nhóm hàng chính</span>
+            <span>Nhóm hàng</span>
           </div>
           <div className="catalog-stat-card">
-            <strong>New</strong>
-            <span>Cập nhật theo mùa</span>
+            <strong>Hot</strong>
+            <span>Trending 2026</span>
           </div>
         </div>
-      </section>
-
-      <section className="catalog-summary">
-        {categoryConfigs.map((category) => (
-          <article key={category.key} className="catalog-summary-card">
-            <h3>{category.label}</h3>
-            <p>{category.description}</p>
-            <span>{category.count} sản phẩm</span>
-          </article>
-        ))}
       </section>
 
       <section className="catalog-toolbar">
@@ -143,14 +134,14 @@ function Products({
               </button>
             ))}
           </div>
-          <p className="catalog-result">Hiển thị {filteredProducts.length} / {products.length} sản phẩm</p>
+          <p className="catalog-result">Hiển thị {filteredProducts.length} món</p>
         </div>
         <div className="catalog-search-wrap">
           <span className="catalog-search-icon">&#128269;</span>
           <input
             type="text"
             className="catalog-search-input"
-            placeholder="Tìm kiếm sản phẩm..."
+            placeholder="Bạn đang tìm sản phẩm nào?"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
           />
@@ -164,62 +155,13 @@ function Products({
 
       <section id="catalog-products" className="catalog-grid">
         {filteredProducts.map((product) => (
-          <article key={product.id} className="catalog-card">
-            <div className="catalog-image-wrap">
-              <img className="catalog-image" src={product.image} alt={product.name} loading="lazy" />
-            </div>
-            <div className="catalog-card-content">
-              <div className="catalog-card-top">
-                <span className="catalog-category">{product.categoryLabel}</span>
-                <span className="catalog-stock">{product.stockLabel}</span>
-              </div>
-              <h3 className="catalog-name">
-                <button
-                  type="button"
-                  className="catalog-name-button"
-                  onClick={() =>
-                    onGoProductDetail({
-                      id: product.id,
-                      name: product.name,
-                      priceNumber: Number(product.price.replace(/\./g, '')),
-                      priceText: `${product.price}đ`,
-                      image: product.image,
-                      size: product.size,
-                      stockLabel: product.stockLabel,
-                      categoryLabel: product.categoryLabel,
-                      description: product.description,
-                    })
-                  }
-                >
-                  {product.name}
-                </button>
-              </h3>
-              <p className="catalog-desc">{product.description}</p>
-              <div className="catalog-price-row">
-                <span className="catalog-price">{product.price}đ</span>
-                <span className="catalog-size">{product.size}</span>
-              </div>
-              <button
-                className="catalog-button"
-                disabled={!authState.isLoggedIn}
-                onClick={() =>
-                  onAddToCart({
-                    id: product.id,
-                    name: product.name,
-                    priceNumber: Number(product.price.replace(/\./g, '')),
-                    priceText: `${product.price}đ`,
-                    image: product.image,
-                    size: product.size,
-                    stockLabel: product.stockLabel,
-                    categoryLabel: product.categoryLabel,
-                    description: product.description,
-                  })
-                }
-              >
-                {authState.isLoggedIn ? 'Thêm vào giỏ' : 'Chỉ xem - cần đăng nhập'}
-              </button>
-            </div>
-          </article>
+          <ProductCard
+            key={product.id}
+            product={product}
+            canAddToCart={authState.isLoggedIn}
+            onAddToCart={onAddToCart}
+            onViewDetail={() => onGoProductDetail(product)}
+          />
         ))}
       </section>
 
@@ -229,15 +171,9 @@ function Products({
           <p>Thời trang trẻ trung, hiện đại và nhiều ưu đãi cho mọi khách hàng.</p>
         </div>
         <div className="footer-contact">
-          <p>
-            <strong>Địa chỉ:</strong> 123 Nguyễn Trãi, Quận 5, TP. Hồ Chí Minh
-          </p>
-          <p>
-            <strong>Số điện thoại:</strong> 0909 123 456
-          </p>
-          <p>
-            <strong>Email:</strong> support@sunnywear.vn
-          </p>
+          <p><strong>Địa chỉ:</strong> 123 Nguyễn Trãi, Quận 5, TP. HCM</p>
+          <p><strong>Hotline:</strong> 1900 6789</p>
+          <p><strong>Email:</strong> hi@sunnywear.vn</p>
         </div>
       </footer>
 
