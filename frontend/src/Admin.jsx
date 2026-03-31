@@ -1,7 +1,26 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { filterProductsBySearch } from './catalog';
 import AdminInventory from './AdminInventory';
 import ScrollTopButton from './components/ScrollTopButton';
+
+const PRODUCTION_API_BASE_URL = 'https://api-ban-quan-ao-backend.onrender.com';
+
+const resolveApiBaseUrl = () => {
+  const envBaseUrl = String(import.meta.env.VITE_API_BASE_URL || '').trim().replace(/\/$/, '');
+
+  if (envBaseUrl) {
+    return envBaseUrl;
+  }
+
+  if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+    return 'http://localhost:3000';
+  }
+
+  return PRODUCTION_API_BASE_URL;
+};
+
+const API_BASE_URL = resolveApiBaseUrl();
+const USERS_API_URL = `${API_BASE_URL}/api/users`;
 
 const ORDER_STATUS_CLASS = {
   'Đã xác nhận': 'admin-status-confirmed',
@@ -95,6 +114,42 @@ const formatDateToDmy = (date) => {
 
   return `${String(date.getDate()).padStart(2, '0')}/${String(date.getMonth() + 1).padStart(2, '0')}/${date.getFullYear()}`;
 };
+
+const parseApiResponse = async (response) => {
+  const rawText = await response.text();
+  if (!rawText) {
+    return {};
+  }
+
+  try {
+    return JSON.parse(rawText);
+  } catch {
+    return { message: rawText };
+  }
+};
+
+const formatJoinedDate = (value) => {
+  if (!value) {
+    return formatDateToDmy(new Date());
+  }
+
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) {
+    return formatDateToDmy(new Date());
+  }
+
+  return formatDateToDmy(parsed);
+};
+
+const mapCustomerFromApi = (user) => ({
+  id: user.id,
+  code: `USR-${String(user.id).padStart(3, '0')}`,
+  name: user.name || user.fullName || user.full_name || 'Khách hàng',
+  email: user.email || '',
+  orders: Number(user.orders || 0),
+  joined: formatJoinedDate(user.createdAt || user.created_at),
+  role: user.role || 'customer',
+});
 
 const formatExpireLabel = (value) => {
   const date = parseExpiryDate(value);
@@ -552,7 +607,7 @@ function CustomersTab({ customers, onDeleteCustomer }) {
           <tbody>
             {customers.map((c) => (
               <tr key={c.id}>
-                <td className="admin-td-id">{c.id}</td>
+                <td className="admin-td-id">{c.code || c.id}</td>
                 <td>{c.name}</td>
                 <td>{c.email}</td>
                 <td>{c.orders}</td>
@@ -790,6 +845,33 @@ function Admin({
     expiresAt: '',
   });
 
+  const fetchCustomersFromApi = async () => {
+    try {
+      const response = await fetch(USERS_API_URL);
+      const data = await parseApiResponse(response);
+
+      if (!response.ok) {
+        throw new Error(data.message || `HTTP ${response.status}`);
+      }
+
+      const normalizedCustomers = Array.isArray(data)
+        ? data
+            .map(mapCustomerFromApi)
+            .filter((item) => item.role !== 'admin' && item.role !== 'staff')
+        : [];
+
+      onSetCustomers(normalizedCustomers);
+    } catch (err) {
+      console.error('Không thể đồng bộ danh sách khách hàng từ API:', err.message);
+    }
+  };
+
+  useEffect(() => {
+    if (activeTab === 'customers') {
+      fetchCustomersFromApi();
+    }
+  }, [activeTab]);
+
   const resetDraft = () => {
     setEditingId(null);
     setProductDraft({
@@ -893,7 +975,7 @@ function Admin({
     }
   };
 
-  const handleDeleteCustomer = (customer) => {
+  const handleDeleteCustomer = async (customer) => {
     const customerLabel = customer?.name ? `${customer.name} (${customer.email})` : customer?.email || 'tài khoản này';
     const confirmed = window.confirm(`Bạn có chắc muốn xóa tài khoản ${customerLabel} không?`);
 
@@ -901,7 +983,21 @@ function Admin({
       return;
     }
 
-    onSetCustomers((prev) => prev.filter((item) => item.id !== customer.id));
+    try {
+      const response = await fetch(`${USERS_API_URL}/${customer.id}`, {
+        method: 'DELETE',
+      });
+      const data = await parseApiResponse(response);
+
+      if (!response.ok) {
+        throw new Error(data.message || `HTTP ${response.status}`);
+      }
+
+      onSetCustomers((prev) => prev.filter((item) => item.id !== customer.id));
+    } catch (err) {
+      console.error('Không thể xóa khách hàng:', err.message);
+      window.alert(`Không thể xóa khách hàng: ${err.message}`);
+    }
   };
 
   const handleUpdateOrderStatus = (orderId, nextStatus) => {

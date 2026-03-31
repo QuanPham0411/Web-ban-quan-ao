@@ -14,10 +14,16 @@ function Login({
   errorMessage,
 }) {
   const [form, setForm] = useState({ email: '', password: '' });
+  const [isLoading, setIsLoading] = useState(false);
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
-    onSubmit(form);
+    setIsLoading(true);
+    try {
+      await onSubmit(form);
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return (
@@ -70,8 +76,8 @@ function Login({
             onChange={(e) => setForm({ ...form, password: e.target.value })}
           />
 
-          <button className="auth-submit" type="submit">
-            Đăng nhập
+          <button className="auth-submit" type="submit" disabled={isLoading}>
+            {isLoading ? 'Đang đăng nhập...' : 'Đăng nhập'}
           </button>
 
           {errorMessage ? <p className="auth-error">{errorMessage}</p> : null}

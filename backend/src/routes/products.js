@@ -2,8 +2,6 @@ const express = require('express');
 const { pool } = require('../db');
 
 const router = express.Router();
-const USE_MOCK_DATA = process.env.USE_MOCK_DATA === 'true';
-const mockStore = USE_MOCK_DATA ? require('../mockStore') : null;
 
 // GET /api/products?category=all|women|men|kids|intimates&page=1&limit=50
 router.get('/', async (req, res) => {
@@ -13,10 +11,6 @@ router.get('/', async (req, res) => {
   const offset = (safePage - 1) * safeLimit;
 
   try {
-    if (USE_MOCK_DATA) {
-      return res.json(mockStore.getProducts({ category: category || 'all', page: safePage, limit: safeLimit }));
-    }
-
     let query = 'SELECT * FROM products';
     const params = [];
 
@@ -50,10 +44,6 @@ router.get('/', async (req, res) => {
 
     return res.json({ products: rows, total, page: safePage, limit: safeLimit });
   } catch (err) {
-    if (USE_MOCK_DATA) {
-      return res.json(mockStore.getProducts({ category: category || 'all', page: safePage, limit: safeLimit }));
-    }
-
     return res.status(500).json({ message: 'Lỗi máy chủ: ' + err.message });
   }
 });
@@ -61,28 +51,12 @@ router.get('/', async (req, res) => {
 // GET /api/products/:id
 router.get('/:id', async (req, res) => {
   try {
-    if (USE_MOCK_DATA) {
-      const product = mockStore.getProductById(req.params.id);
-      if (!product) {
-        return res.status(404).json({ message: 'Sản phẩm không tìm thấy.' });
-      }
-      return res.json(product);
-    }
-
     const [rows] = await pool.query('SELECT * FROM products WHERE id = ?', [req.params.id]);
     if (rows.length === 0) {
       return res.status(404).json({ message: 'Sản phẩm không tìm thấy.' });
     }
     return res.json(rows[0]);
   } catch (err) {
-    if (USE_MOCK_DATA) {
-      const product = mockStore.getProductById(req.params.id);
-      if (!product) {
-        return res.status(404).json({ message: 'Sản phẩm không tìm thấy.' });
-      }
-      return res.json(product);
-    }
-
     return res.status(500).json({ message: 'Lỗi máy chủ: ' + err.message });
   }
 });

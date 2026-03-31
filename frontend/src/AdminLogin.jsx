@@ -3,12 +3,21 @@ import { useState } from 'react';
 function AdminLogin({ onAdminLoginSubmit, onGoHome }) {
   const [form, setForm] = useState({ email: '', password: '' });
   const [error, setError] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
-    const success = onAdminLoginSubmit(form);
-    if (!success) {
-      setError('Email hoặc mật khẩu không đúng.');
+    setError('');
+    setIsLoading(true);
+    try {
+      const success = await onAdminLoginSubmit(form);
+      if (!success) {
+        setError('Email hoặc mật khẩu không đúng. Chỉ tài khoản admin mới được truy cập.');
+      }
+    } catch (err) {
+      setError(`Lỗi: ${err.message}`);
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -54,8 +63,8 @@ function AdminLogin({ onAdminLoginSubmit, onGoHome }) {
 
           {error && <p className="admin-login-error">{error}</p>}
 
-          <button type="submit" className="admin-login-btn">
-            Đăng nhập
+          <button type="submit" className="admin-login-btn" disabled={isLoading}>
+            {isLoading ? 'Đangnhập...' : 'Đăng nhập'}
           </button>
         </form>
 
