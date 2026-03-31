@@ -15,6 +15,7 @@ const OTP_STORE = new Map();
 const generateOtp = () => String(Math.floor(100000 + Math.random() * 900000));
 const SMTP_HOST = String(process.env.SMTP_HOST || '').trim();
 const SMTP_PORT = Number(process.env.SMTP_PORT || 587);
+const SMTP_SECURE = String(process.env.SMTP_SECURE || '').trim().toLowerCase() === 'true';
 const SMTP_USER = String(process.env.SMTP_USER || '').trim();
 const SMTP_PASS = String(process.env.SMTP_PASS || '').trim();
 const SMTP_FROM = String(process.env.SMTP_FROM || SMTP_USER || '').trim();
@@ -26,10 +27,18 @@ const getTransporter = () => {
   }
 
   if (!transporter) {
+    const secure = SMTP_SECURE || SMTP_PORT === 465;
     transporter = nodemailer.createTransport({
       host: SMTP_HOST,
       port: SMTP_PORT,
-      secure: SMTP_PORT === 465,
+      secure,
+      requireTLS: !secure,
+      connectionTimeout: Number(process.env.SMTP_CONNECTION_TIMEOUT_MS || 20000),
+      greetingTimeout: Number(process.env.SMTP_GREETING_TIMEOUT_MS || 15000),
+      socketTimeout: Number(process.env.SMTP_SOCKET_TIMEOUT_MS || 30000),
+      tls: {
+        servername: SMTP_HOST,
+      },
       auth: {
         user: SMTP_USER,
         pass: SMTP_PASS,
