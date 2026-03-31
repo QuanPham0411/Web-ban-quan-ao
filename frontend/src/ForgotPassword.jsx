@@ -49,7 +49,6 @@ function ForgotPassword({
   const [otp, setOtp] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
-  const [generatedOtp, setGeneratedOtp] = useState('');
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
   const [otpSecondsLeft, setOtpSecondsLeft] = useState(OTP_ROTATE_SECONDS);
@@ -101,11 +100,10 @@ function ForgotPassword({
         return;
       }
 
-      setGeneratedOtp(String(data.otp || ''));
       setStep('otp');
       setOtp('');
       setOtpSecondsLeft(Number(data.expiresInSeconds || OTP_ROTATE_SECONDS));
-      setMessage(`OTP của bạn là: ${String(data.otp || '')}`);
+      setMessage('OTP đã được gửi về email của bạn. Vui lòng kiểm tra hộp thư và nhập OTP.');
     } catch (err) {
       setError(`Lỗi kết nối: ${err.message}`);
     } finally {
@@ -123,13 +121,53 @@ function ForgotPassword({
       return;
     }
 
-    if (otp !== generatedOtp) {
-      setError('OTP không chính xác');
+    if (!/^\d{6}$/.test(otp)) {
+      setError('OTP phải gồm đúng 6 chữ số.');
+      return;
+    }
+
+    if (otpSecondsLeft <= 0) {
+      setError('OTP đã hết hạn. Vui lòng gửi lại OTP mới.');
       return;
     }
 
     setStep('password');
-    setMessage('OTP xác minh thành công! Vui lòng đặt mật khẩu mới');
+    setMessage('Vui lòng nhập mật khẩu mới để hoàn tất đặt lại mật khẩu.');
+  };
+
+  const handleResendOtp = async () => {
+    const normalizedEmail = normalizeEmail(email);
+    if (!normalizedEmail) {
+      setError('Vui lòng nhập email để gửi lại OTP.');
+      return;
+    }
+
+    setIsLoading(true);
+    setError('');
+    setMessage('');
+
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/auth/forgot-password/resend`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: normalizedEmail }),
+      });
+      const data = await parseApiResponse(response);
+
+      if (!response.ok) {
+        setError(data.message || 'Không thể gửi lại OTP.');
+        return;
+      }
+
+      setOtp('');
+      setOtpSecondsLeft(Number(data.expiresInSeconds || OTP_ROTATE_SECONDS));
+      setMessage('OTP mới đã được gửi lại về email của bạn.');
+      setStep('otp');
+    } catch (err) {
+      setError(`Lỗi kết nối: ${err.message}`);
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   const handlePasswordSubmit = async (e) => {
@@ -187,7 +225,6 @@ function ForgotPassword({
     setOtp('');
     setNewPassword('');
     setConfirmPassword('');
-    setGeneratedOtp('');
     setError('');
     setMessage('');
     setOtpSecondsLeft(OTP_ROTATE_SECONDS);
@@ -239,12 +276,12 @@ function ForgotPassword({
 
           {step === 'otp' && (
             <>
-              <p>Mã OTP được tạo cho email <strong>{email}</strong></p>
+              <p>Mã OTP đã được gửi đến email <strong>{email}</strong></p>
 
               <div className="otp-display-box">
-                <p>OTP của bạn:</p>
-                <div className="otp-code">{generatedOtp}</div>
-                <small>Tự đổi sau {otpSecondsLeft} giây</small>
+                <p>OTP có hiệu lực trong:</p>
+                <div className="otp-code">{otpSecondsLeft}s</div>
+                <small>{otpSecondsLeft > 0 ? 'Vui lòng nhập OTP trước khi hết hạn.' : 'OTP đã hết hạn, hãy gửi lại OTP mới.'}</small>
               </div>
 
               <label htmlFor="forgot-otp">Nhập OTP</label>
@@ -257,6 +294,10 @@ function ForgotPassword({
                 value={otp}
                 onChange={(e) => setOtp(e.target.value.replace(/\D/g, ''))}
               />
+
+              <button type="button" className="auth-back-btn" onClick={handleResendOtp} disabled={isLoading || otpSecondsLeft > 0}>
+                {isLoading ? 'Đang gửi lại OTP...' : 'Gửi lại OTP'}
+              </button>
             </>
           )}
 

@@ -1,6 +1,7 @@
 const express = require('express');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
+const nodemailer = require('nodemailer');
 const { pool } = require('../db');
 const authMiddleware = require('../middleware/authMiddleware');
 
@@ -12,6 +13,62 @@ const OTP_EXPIRE_MS = 5 * 60 * 1000;
 const OTP_STORE = new Map();
 
 const generateOtp = () => String(Math.floor(100000 + Math.random() * 900000));
+const SMTP_HOST = String(process.env.SMTP_HOST || '').trim();
+const SMTP_PORT = Number(process.env.SMTP_PORT || 587);
+const SMTP_USER = String(process.env.SMTP_USER || '').trim();
+const SMTP_PASS = String(process.env.SMTP_PASS || '').trim();
+const SMTP_FROM = String(process.env.SMTP_FROM || SMTP_USER || '').trim();
+
+let transporter;
+const getTransporter = () => {
+  if (!SMTP_HOST || !SMTP_USER || !SMTP_PASS || !SMTP_FROM) {
+    return null;
+  }
+
+  if (!transporter) {
+    transporter = nodemailer.createTransport({
+      host: SMTP_HOST,
+      port: SMTP_PORT,
+      secure: SMTP_PORT === 465,
+      auth: {
+        user: SMTP_USER,
+        pass: SMTP_PASS,
+      },
+    });
+  }
+
+  return transporter;
+};
+
+const sendOtpEmail = async (email, otp) => {
+  const mailer = getTransporter();
+
+  if (!mailer) {
+    throw new Error('SMTP chưa được cấu hình đầy đủ. Với Gmail, hãy điền SMTP_USER và App Password 16 ký tự vào SMTP_PASS.');
+  }
+
+  await mailer.sendMail({
+    from: SMTP_FROM,
+    to: email,
+    subject: 'SunnyWear - Ma OTP khoi phuc mat khau',
+    text: `Ma OTP cua ban la: ${otp}. Ma co hieu luc trong 5 phut. Vui long khong chia se ma nay cho bat ky ai.`,
+    html: `<p>Ma OTP cua ban la: <b>${otp}</b></p><p>Ma co hieu luc trong <b>5 phut</b>.</p><p>Vui long khong chia se ma nay cho bat ky ai.</p>`,
+  });
+};
+
+const mapOtpMailErrorMessage = (err) => {
+  const msg = String(err?.message || '');
+
+  if (/Invalid login|BadCredentials|535-5\.7\.8|Username and Password not accepted/i.test(msg)) {
+    return 'Không thể gửi OTP: tài khoản Gmail hoặc App Password chưa đúng. Hãy kiểm tra SMTP_USER và SMTP_PASS (App Password 16 ký tự).';
+  }
+
+  if (/SMTP chưa được cấu hình|Missing credentials/i.test(msg)) {
+    return 'Không thể gửi OTP: SMTP chưa cấu hình đầy đủ trên server.';
+  }
+
+  return 'Không thể gửi OTP qua email vào lúc này. Vui lòng thử lại sau.';
+};
 
 // POST /api/auth/register
 router.post('/register', async (req, res) => {
@@ -56,7 +113,7 @@ router.post('/register', async (req, res) => {
       user: { id: result.insertId, fullName: normalizedName, email: normalizedEmail, role: 'customer' },
     });
   } catch (err) {
-    return res.status(500).json({ message: 'Lỗi máy chủ: ' + err.message });
+    return res.status(500).json({ message: mapOtpMailErrorMessage(err) });
   }
 });
 
@@ -98,7 +155,7 @@ router.post('/login', async (req, res) => {
       user: { id: user.id, fullName: user.full_name, email: user.email, phone: user.phone, role: user.role },
     });
   } catch (err) {
-    return res.status(500).json({ message: 'Lỗi máy chủ: ' + err.message });
+    return res.status(500).json({ message: mapOtpMailErrorMessage(err) });
   }
 });
 
@@ -117,15 +174,50 @@ router.post('/forgot-password/request', async (req, res) => {
     }
 
     const otp = generateOtp();
-    OTP_STORE.set(normalizedEmail, {
+    const otpRecord = {
       otp,
       expiresAt: Date.now() + OTP_EXPIRE_MS,
       attempts: 0,
-    });
+    };
+
+    await sendOtpEmail(normalizedEmail, otp);
+    OTP_STORE.set(normalizedEmail, otpRecord);
 
     return res.json({
-      message: 'Đã tạo OTP. Vui lòng dùng OTP để đặt lại mật khẩu.',
+      message: 'OTP đã được gửi về email của bạn. Vui lòng kiểm tra hộp thư.',
+      expiresInSeconds: Math.floor(OTP_EXPIRE_MS / 1000),
+    });
+  } catch (err) {
+    return res.status(500).json({ message: 'Lỗi máy chủ: ' + err.message });
+  }
+});
+
+// POST /api/auth/forgot-password/resend
+router.post('/forgot-password/resend', async (req, res) => {
+  const normalizedEmail = String(req.body?.email || '').toLowerCase().trim();
+
+  if (!normalizedEmail) {
+    return res.status(400).json({ message: 'Vui lòng nhập email.' });
+  }
+
+  try {
+    const [rows] = await pool.query('SELECT id, email FROM users WHERE email = ?', [normalizedEmail]);
+    if (rows.length === 0) {
+      return res.status(404).json({ message: 'Email này chưa đăng ký tài khoản.' });
+    }
+
+    const otp = generateOtp();
+    const otpRecord = {
       otp,
+      expiresAt: Date.now() + OTP_EXPIRE_MS,
+      attempts: 0,
+    };
+
+    await sendOtpEmail(normalizedEmail, otp);
+    OTP_STORE.set(normalizedEmail, otpRecord);
+
+    return res.json({
+      message: 'Đã gửi lại OTP mới về email của bạn.',
       expiresInSeconds: Math.floor(OTP_EXPIRE_MS / 1000),
     });
   } catch (err) {
@@ -156,12 +248,12 @@ router.post('/forgot-password/reset', async (req, res) => {
 
   if (Date.now() > otpRecord.expiresAt) {
     OTP_STORE.delete(normalizedEmail);
-    return res.status(400).json({ message: 'OTP đã hết hạn. Vui lòng tạo OTP mới.' });
+    return res.status(400).json({ message: 'OTP đã hết hạn. Vui lòng gửi lại OTP mới.' });
   }
 
   if (otpRecord.attempts >= 5) {
     OTP_STORE.delete(normalizedEmail);
-    return res.status(429).json({ message: 'Bạn đã nhập sai OTP quá nhiều lần. Vui lòng tạo OTP mới.' });
+    return res.status(429).json({ message: 'Bạn đã nhập sai OTP quá nhiều lần. Vui lòng gửi lại OTP mới.' });
   }
 
   if (otpRecord.otp !== otp) {
