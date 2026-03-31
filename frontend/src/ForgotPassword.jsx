@@ -76,7 +76,7 @@ function ForgotPassword({
   }, [step]);
 
   const handleEmailSubmit = async (e) => {
-    e.preventDefault();
+    e?.preventDefault();
     setError('');
     setMessage('');
 
@@ -230,18 +230,6 @@ function ForgotPassword({
     setOtpSecondsLeft(OTP_ROTATE_SECONDS);
   };
 
-  const handleGoToOtpStep = () => {
-    const normalizedEmail = normalizeEmail(email);
-    if (!normalizedEmail) {
-      setError('Vui lòng nhập email trước khi nhập OTP.');
-      return;
-    }
-
-    setError('');
-    setMessage('Nếu bạn đã nhận OTP qua email, hãy nhập OTP để tiếp tục.');
-    setStep('otp');
-  };
-
   return (
     <div className="auth-page">
       <header className="top-header auth-header">
@@ -284,8 +272,8 @@ function ForgotPassword({
                 onChange={(e) => setEmail(e.target.value)}
               />
 
-              <button type="button" className="auth-back-btn" onClick={handleGoToOtpStep} disabled={isLoading}>
-                Tôi đã nhận OTP
+              <button type="button" className="auth-submit" onClick={handleEmailSubmit} disabled={isLoading}>
+                {isLoading ? 'Đang gửi OTP...' : 'Gửi OTP'}
               </button>
             </>
           )}
@@ -348,11 +336,12 @@ function ForgotPassword({
           {error && <p className="auth-error">{error}</p>}
           {message && <p className="auth-message">{message}</p>}
 
-          <button className="auth-submit" type="submit" disabled={isLoading || (step === 'otp' && otpSecondsLeft === 0)}>
-            {step === 'email' && 'Tiếp tục'}
-            {step === 'otp' && 'Xác minh OTP'}
-            {step === 'password' && (isLoading ? 'Đang cập nhật...' : 'Cập nhật mật khẩu')}
-          </button>
+          {step !== 'email' && (
+            <button className="auth-submit" type="submit" disabled={isLoading || (step === 'otp' && otpSecondsLeft === 0)}>
+              {step === 'otp' && 'Xác minh OTP'}
+              {step === 'password' && (isLoading ? 'Đang cập nhật...' : 'Cập nhật mật khẩu')}
+            </button>
+          )}
 
           {step !== 'email' && (
             <button type="button" className="auth-back-btn" onClick={handleBack}>
