@@ -15,6 +15,24 @@ import Admin from './Admin';
 import AdminLogin from './AdminLogin';
 import './styles/App.css';
 
+const PRODUCTION_API_BASE_URL = 'https://api-ban-quan-ao-backend.onrender.com';
+
+const resolveApiBaseUrl = () => {
+  const envBaseUrl = String(import.meta.env.VITE_API_BASE_URL || '').trim().replace(/\/$/, '');
+
+  if (envBaseUrl) {
+    return envBaseUrl;
+  }
+
+  if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+    return 'http://localhost:3000';
+  }
+
+  return PRODUCTION_API_BASE_URL;
+};
+
+const API_BASE_URL = resolveApiBaseUrl();
+
 const AUTH_STORAGE_KEY = 'sunnywear-auth';
 const LAST_VISIT_STORAGE_KEY = 'sunnywear-last-visit';
 const CART_STORAGE_KEY = 'sunnywear-cart';
@@ -41,6 +59,31 @@ const parseApiResponse = async (response) => {
   } catch {
     return { message: rawText };
   }
+};
+
+const mapAuthErrorMessage = (response, payload, fallback) => {
+  const raw = String(payload?.message || '').trim();
+  if (raw) {
+    if (/not_found|the page could not be found|cannot\s+(post|get)/i.test(raw)) {
+      return 'Không tìm thấy API backend. Vui lòng kiểm tra URL backend hoặc biến VITE_API_BASE_URL.';
+    }
+    return raw;
+  }
+
+  if (response.status === 409) {
+    return 'Tài khoản này đã được đăng ký rồi.';
+  }
+  if (response.status === 401) {
+    return 'Email hoặc mật khẩu không đúng.';
+  }
+  if (response.status === 403) {
+    return 'Tài khoản của bạn đã bị khóa hoặc không có quyền truy cập.';
+  }
+  if (response.status >= 500) {
+    return 'Máy chủ đang bận. Vui lòng thử lại sau.';
+  }
+
+  return fallback;
 };
 
 const defaultQuantity = (stock) => {
@@ -416,7 +459,7 @@ function App() {
     try {
       setLoginError('');
       // Gọi API backend để verify email/password từ database
-      const response = await fetch('/api/auth/login', {
+      const response = await fetch(`${API_BASE_URL}/api/auth/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email: normalizedEmail, password }),
@@ -425,7 +468,7 @@ function App() {
       const data = await parseApiResponse(response);
 
       if (!response.ok) {
-        setLoginError(data.message || 'Đăng nhập thất bại');
+        setLoginError(mapAuthErrorMessage(response, data, 'Đăng nhập thất bại'));
         return;
       }
 
@@ -476,7 +519,7 @@ function App() {
     try {
       setLoginError('');
       // Gọi API backend để register user
-      const response = await fetch('/api/auth/register', {
+      const response = await fetch(`${API_BASE_URL}/api/auth/register`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -490,7 +533,7 @@ function App() {
       const data = await parseApiResponse(response);
 
       if (!response.ok) {
-        setLoginError(data.message || 'Đăng ký thất bại');
+        setLoginError(mapAuthErrorMessage(response, data, 'Đăng ký thất bại'));
         return;
       }
 
@@ -657,7 +700,7 @@ function App() {
 
     try {
       // Gọi API backend để verify email/password từ database
-      const response = await fetch('/api/auth/login', {
+      const response = await fetch(`${API_BASE_URL}/api/auth/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email: normalizedEmail, password }),
@@ -666,7 +709,7 @@ function App() {
       const data = await parseApiResponse(response);
 
       if (!response.ok) {
-        console.error('Đăng nhập thất bại:', data.message);
+        console.error('Đăng nhập thất bại:', mapAuthErrorMessage(response, data, 'Đăng nhập thất bại'));
         return false;
       }
 
@@ -834,6 +877,7 @@ function App() {
         onGoLogin={handleGoLogin}
         cartCount={visibleCartCount}
         onSubmit={handleRegisterSubmit}
+        errorMessage={loginError}
       />
     );
   }

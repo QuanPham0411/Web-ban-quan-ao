@@ -5,7 +5,7 @@ const normalizePhoneInput = (value) => String(value || '').replace(/\D/g, '').sl
 const isValidPhone = (value) => /^\d{10}$/.test(String(value || ''));
 const isStrongPassword = (value) => /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z0-9]).{8,}$/.test(String(value || ''));
 
-function Register({ onGoHome, onGoProducts, onGoOffers, onGoUsers, onGoCart, onGoLogin, cartCount, onSubmit }) {
+function Register({ onGoHome, onGoProducts, onGoOffers, onGoUsers, onGoCart, onGoLogin, cartCount, onSubmit, errorMessage }) {
   const [form, setForm] = useState({ fullName: '', email: '', phone: '', password: '' });
   const [phoneError, setPhoneError] = useState('');
   const [passwordError, setPasswordError] = useState('');
@@ -121,6 +121,8 @@ function Register({ onGoHome, onGoProducts, onGoOffers, onGoUsers, onGoCart, onG
           <button className="auth-submit" type="submit" disabled={isLoading}>
             {isLoading ? 'Đang tạo tài khoản...' : 'Tạo tài khoản'}
           </button>
+
+          {errorMessage ? <p className="auth-error">{errorMessage}</p> : null}
 
           <p className="auth-switch">
             Đã có tài khoản?{' '}
