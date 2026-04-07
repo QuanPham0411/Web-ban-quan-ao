@@ -13,12 +13,25 @@ const OTP_EXPIRE_MS = 5 * 60 * 1000;
 const OTP_STORE = new Map();
 
 const generateOtp = () => String(Math.floor(100000 + Math.random() * 900000));
+const EMAIL_PROVIDER = String(process.env.EMAIL_PROVIDER || '').trim().toLowerCase();
+
+const RESEND_API_KEY = String(process.env.RESEND_API_KEY || '').trim();
+const RESEND_FROM = String(process.env.RESEND_FROM || '').trim();
+
 const SMTP_HOST = String(process.env.SMTP_HOST || '').trim();
 const SMTP_PORT = Number(process.env.SMTP_PORT || 587);
 const SMTP_SECURE = String(process.env.SMTP_SECURE || '').trim().toLowerCase() === 'true';
 const SMTP_USER = String(process.env.SMTP_USER || '').trim();
 const SMTP_PASS = String(process.env.SMTP_PASS || '').trim();
 const SMTP_FROM = String(process.env.SMTP_FROM || SMTP_USER || '').trim();
+
+// DEBUG: Log env vars để kiểm tra Resend config
+console.log('[AUTH] EMAIL_PROVIDER:', EMAIL_PROVIDER);
+console.log('[AUTH] RESEND_API_KEY:', RESEND_API_KEY ? `***${RESEND_API_KEY.slice(-10)}` : 'MISSING');
+console.log('[AUTH] RESEND_FROM:', RESEND_FROM || 'MISSING');
+console.log('[AUTH] shouldUseResend will be:', EMAIL_PROVIDER === 'resend' || (Boolean(RESEND_API_KEY) && Boolean(RESEND_FROM)));
+
+const shouldUseResend = () => EMAIL_PROVIDER === 'resend' || (Boolean(RESEND_API_KEY) && Boolean(RESEND_FROM));
 
 let transporter;
 const getTransporter = () => {
@@ -51,7 +64,38 @@ const getTransporter = () => {
   return transporter;
 };
 
+const sendOtpViaResend = async (email, otp) => {
+  if (!RESEND_API_KEY || !RESEND_FROM) {
+    throw new Error('RESEND chưa được cấu hình đầy đủ. Hãy điền RESEND_API_KEY và RESEND_FROM.');
+  }
+
+  const response = await fetch('https://api.resend.com/emails', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${RESEND_API_KEY}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      from: RESEND_FROM,
+      to: [email],
+      subject: 'SunnyWear - Ma OTP khoi phuc mat khau',
+      text: `Ma OTP cua ban la: ${otp}. Ma co hieu luc trong 5 phut. Vui long khong chia se ma nay cho bat ky ai.`,
+      html: `<p>Ma OTP cua ban la: <b>${otp}</b></p><p>Ma co hieu luc trong <b>5 phut</b>.</p><p>Vui long khong chia se ma nay cho bat ky ai.</p>`,
+    }),
+  });
+
+  if (!response.ok) {
+    const raw = await response.text();
+    throw new Error(`RESEND_HTTP_${response.status}: ${raw}`);
+  }
+};
+
 const sendOtpEmail = async (email, otp) => {
+  if (shouldUseResend()) {
+    await sendOtpViaResend(email, otp);
+    return;
+  }
+
   const mailer = getTransporter();
 
   if (!mailer) {
@@ -69,6 +113,18 @@ const sendOtpEmail = async (email, otp) => {
 
 const mapOtpMailErrorMessage = (err) => {
   const msg = String(err?.message || '');
+
+  if (/RESEND_HTTP_401|RESEND_HTTP_403|RESEND chưa được cấu hình/i.test(msg)) {
+    return 'Không thể gửi OTP: cấu hình Resend chưa đúng. Hãy kiểm tra RESEND_API_KEY và RESEND_FROM.';
+  }
+
+  if (/RESEND_HTTP_429/i.test(msg)) {
+    return 'Không thể gửi OTP: dịch vụ email đang quá tải. Vui lòng thử lại sau ít phút.';
+  }
+
+  if (/RESEND_HTTP_5\d\d|RESEND_HTTP_4\d\d/i.test(msg)) {
+    return 'Không thể gửi OTP: dịch vụ email tạm thời lỗi. Vui lòng thử lại sau.';
+  }
 
   if (/Connection timeout|ETIMEDOUT|timeout/i.test(msg)) {
     return 'Không thể gửi OTP: kết nối SMTP bị timeout. Vui lòng thử lại sau.';
