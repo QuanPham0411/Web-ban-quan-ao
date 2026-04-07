@@ -65,7 +65,11 @@ const getTransporter = () => {
 };
 
 const sendOtpViaResend = async (email, otp) => {
+  console.log('[RESEND] Attempting to send OTP to:', email);
+  
   if (!RESEND_API_KEY || !RESEND_FROM) {
+    const err = `RESEND_API_KEY: ${RESEND_API_KEY ? 'set' : 'MISSING'}, RESEND_FROM: ${RESEND_FROM ? 'set' : 'MISSING'}`;
+    console.log('[RESEND] Config check failed:', err);
     throw new Error('RESEND chưa được cấu hình đầy đủ. Hãy điền RESEND_API_KEY và RESEND_FROM.');
   }
 
@@ -84,10 +88,15 @@ const sendOtpViaResend = async (email, otp) => {
     }),
   });
 
+  console.log('[RESEND] Response status:', response.status);
+
   if (!response.ok) {
     const raw = await response.text();
+    console.log('[RESEND] Error response body:', raw);
     throw new Error(`RESEND_HTTP_${response.status}: ${raw}`);
   }
+
+  console.log('[RESEND] OTP sent successfully to:', email);
 };
 
 const sendOtpEmail = async (email, otp) => {
