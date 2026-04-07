@@ -6,11 +6,22 @@ const { pool } = require('../db');
 const authMiddleware = require('../middleware/authMiddleware');
 
 const router = express.Router();
-const JWT_SECRET = process.env.JWT_SECRET || 'sunnywear_secret_key';
+const JWT_SECRET = String(process.env.JWT_SECRET || '').trim() || (process.env.NODE_ENV !== 'production' ? 'sunnywear_secret_key' : '');
 const PHONE_REGEX = /^\d{10}$/;
 const PASSWORD_REGEX = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z0-9]).{8,}$/;
 const OTP_EXPIRE_MS = 5 * 60 * 1000;
 const OTP_STORE = new Map();
+const LOGIN_RATE_LIMIT_WINDOW_MS = 10 * 60 * 1000;
+const LOGIN_RATE_LIMIT_MAX_ATTEMPTS = 8;
+const FORGOT_RATE_LIMIT_WINDOW_MS = 10 * 60 * 1000;
+const FORGOT_RATE_LIMIT_MAX_ATTEMPTS = 6;
+const RESET_RATE_LIMIT_WINDOW_MS = 10 * 60 * 1000;
+const RESET_RATE_LIMIT_MAX_ATTEMPTS = 10;
+const RATE_LIMIT_STORE = {
+  login: new Map(),
+  forgot: new Map(),
+  reset: new Map(),
+};
 
 const generateOtp = () => String(Math.floor(100000 + Math.random() * 900000));
 const EMAIL_PROVIDER = String(process.env.EMAIL_PROVIDER || '').trim().toLowerCase();
@@ -25,13 +36,46 @@ const SMTP_USER = String(process.env.SMTP_USER || '').trim();
 const SMTP_PASS = String(process.env.SMTP_PASS || '').trim();
 const SMTP_FROM = String(process.env.SMTP_FROM || SMTP_USER || '').trim();
 
-// DEBUG: Log env vars để kiểm tra Resend config
-console.log('[AUTH] EMAIL_PROVIDER:', EMAIL_PROVIDER);
-console.log('[AUTH] RESEND_API_KEY:', RESEND_API_KEY ? `***${RESEND_API_KEY.slice(-10)}` : 'MISSING');
-console.log('[AUTH] RESEND_FROM:', RESEND_FROM || 'MISSING');
-console.log('[AUTH] shouldUseResend will be:', EMAIL_PROVIDER === 'resend' || (Boolean(RESEND_API_KEY) && Boolean(RESEND_FROM)));
-
 const shouldUseResend = () => EMAIL_PROVIDER === 'resend' || (Boolean(RESEND_API_KEY) && Boolean(RESEND_FROM));
+
+const getClientIp = (req) => {
+  const xff = String(req.headers['x-forwarded-for'] || '').trim();
+  if (xff) {
+    return xff.split(',')[0].trim();
+  }
+  return String(req.ip || req.connection?.remoteAddress || 'unknown');
+};
+
+const pruneRateLimitMap = (store, now) => {
+  for (const [key, entry] of store.entries()) {
+    if (!entry || now - entry.startedAt > entry.windowMs) {
+      store.delete(key);
+    }
+  }
+};
+
+const consumeRateLimit = (store, key, maxAttempts, windowMs) => {
+  const now = Date.now();
+  pruneRateLimitMap(store, now);
+
+  const current = store.get(key);
+  if (!current || now - current.startedAt > windowMs) {
+    store.set(key, { attempts: 1, startedAt: now, windowMs });
+    return { blocked: false };
+  }
+
+  if (current.attempts >= maxAttempts) {
+    return { blocked: true, retryAfterMs: windowMs - (now - current.startedAt) };
+  }
+
+  current.attempts += 1;
+  store.set(key, current);
+  return { blocked: false };
+};
+
+const resetRateLimit = (store, key) => {
+  store.delete(key);
+};
 
 let transporter;
 const getTransporter = () => {
@@ -65,11 +109,7 @@ const getTransporter = () => {
 };
 
 const sendOtpViaResend = async (email, otp) => {
-  console.log('[RESEND] Attempting to send OTP to:', email);
-  
   if (!RESEND_API_KEY || !RESEND_FROM) {
-    const err = `RESEND_API_KEY: ${RESEND_API_KEY ? 'set' : 'MISSING'}, RESEND_FROM: ${RESEND_FROM ? 'set' : 'MISSING'}`;
-    console.log('[RESEND] Config check failed:', err);
     throw new Error('RESEND chưa được cấu hình đầy đủ. Hãy điền RESEND_API_KEY và RESEND_FROM.');
   }
 
@@ -88,15 +128,10 @@ const sendOtpViaResend = async (email, otp) => {
     }),
   });
 
-  console.log('[RESEND] Response status:', response.status);
-
   if (!response.ok) {
     const raw = await response.text();
-    console.log('[RESEND] Error response body:', raw);
     throw new Error(`RESEND_HTTP_${response.status}: ${raw}`);
   }
-
-  console.log('[RESEND] OTP sent successfully to:', email);
 };
 
 const sendOtpEmail = async (email, otp) => {
@@ -122,6 +157,10 @@ const sendOtpEmail = async (email, otp) => {
 
 const mapOtpMailErrorMessage = (err) => {
   const msg = String(err?.message || '');
+
+  if (/your own email address|testing emails/i.test(msg)) {
+    return 'Không thể gửi OTP: tài khoản Resend test chỉ gửi tới email đăng ký tài khoản Resend. Muốn gửi tới email khác, cần verify domain.';
+  }
 
   if (/RESEND_HTTP_401|RESEND_HTTP_403|RESEND chưa được cấu hình/i.test(msg)) {
     return 'Không thể gửi OTP: cấu hình Resend chưa đúng. Hãy kiểm tra RESEND_API_KEY và RESEND_FROM.';
@@ -160,6 +199,9 @@ router.post('/register', async (req, res) => {
   if (!fullName || !email || !phone || !password) {
     return res.status(400).json({ message: 'Vui lòng điền đầy đủ thông tin bắt buộc.' });
   }
+  if (!JWT_SECRET) {
+    return res.status(500).json({ message: 'Server thiếu cấu hình bảo mật JWT_SECRET.' });
+  }
   if (!PHONE_REGEX.test(normalizedPhone)) {
     return res.status(400).json({ message: 'Số điện thoại phải gồm đúng 10 chữ số.' });
   }
@@ -182,18 +224,12 @@ router.post('/register', async (req, res) => {
       [normalizedName, normalizedEmail, normalizedPhone, passwordHash],
     );
 
-    const token = jwt.sign(
-      { id: result.insertId, email: normalizedEmail, fullName: normalizedName, role: 'customer' },
-      JWT_SECRET,
-      { expiresIn: '7d' },
-    );
-
     return res.status(201).json({
-      token,
+      message: 'Đăng ký thành công. Vui lòng đăng nhập để tiếp tục.',
       user: { id: result.insertId, fullName: normalizedName, email: normalizedEmail, role: 'customer' },
     });
   } catch (err) {
-    return res.status(500).json({ message: mapOtpMailErrorMessage(err) });
+    return res.status(500).json({ message: 'Lỗi máy chủ. Vui lòng thử lại sau.' });
   }
 });
 
@@ -201,9 +237,25 @@ router.post('/register', async (req, res) => {
 router.post('/login', async (req, res) => {
   const { email, password } = req.body;
   const normalizedEmail = String(email || '').toLowerCase().trim();
+  const ip = getClientIp(req);
+  const rateLimitKey = `${ip}|${normalizedEmail || 'unknown'}`;
 
   if (!email || !password) {
     return res.status(400).json({ message: 'Vui lòng nhập email và mật khẩu.' });
+  }
+  if (!JWT_SECRET) {
+    return res.status(500).json({ message: 'Server thiếu cấu hình bảo mật JWT_SECRET.' });
+  }
+
+  const rateLimit = consumeRateLimit(
+    RATE_LIMIT_STORE.login,
+    rateLimitKey,
+    LOGIN_RATE_LIMIT_MAX_ATTEMPTS,
+    LOGIN_RATE_LIMIT_WINDOW_MS,
+  );
+
+  if (rateLimit.blocked) {
+    return res.status(429).json({ message: 'Bạn thử đăng nhập quá nhiều lần. Vui lòng thử lại sau ít phút.' });
   }
 
   try {
@@ -223,6 +275,7 @@ router.post('/login', async (req, res) => {
     }
 
     await pool.query('UPDATE users SET last_login = CURRENT_TIMESTAMP WHERE id = ?', [user.id]);
+    resetRateLimit(RATE_LIMIT_STORE.login, rateLimitKey);
 
     const token = jwt.sign(
       { id: user.id, email: user.email, fullName: user.full_name, role: user.role },
@@ -235,22 +288,38 @@ router.post('/login', async (req, res) => {
       user: { id: user.id, fullName: user.full_name, email: user.email, phone: user.phone, role: user.role },
     });
   } catch (err) {
-    return res.status(500).json({ message: mapOtpMailErrorMessage(err) });
+    return res.status(500).json({ message: 'Lỗi máy chủ. Vui lòng thử lại sau.' });
   }
 });
 
 // POST /api/auth/forgot-password/request
 router.post('/forgot-password/request', async (req, res) => {
   const normalizedEmail = String(req.body?.email || '').toLowerCase().trim();
+  const ip = getClientIp(req);
+  const rateLimitKey = `${ip}|${normalizedEmail || 'unknown'}`;
 
   if (!normalizedEmail) {
     return res.status(400).json({ message: 'Vui lòng nhập email.' });
   }
 
+  const rateLimit = consumeRateLimit(
+    RATE_LIMIT_STORE.forgot,
+    rateLimitKey,
+    FORGOT_RATE_LIMIT_MAX_ATTEMPTS,
+    FORGOT_RATE_LIMIT_WINDOW_MS,
+  );
+
+  if (rateLimit.blocked) {
+    return res.status(429).json({ message: 'Bạn yêu cầu OTP quá nhiều lần. Vui lòng thử lại sau ít phút.' });
+  }
+
   try {
     const [rows] = await pool.query('SELECT id, email FROM users WHERE email = ?', [normalizedEmail]);
     if (rows.length === 0) {
-      return res.status(404).json({ message: 'Email này chưa đăng ký tài khoản.' });
+      return res.json({
+        message: 'Nếu email tồn tại trong hệ thống, OTP đã được gửi. Vui lòng kiểm tra hộp thư.',
+        expiresInSeconds: Math.floor(OTP_EXPIRE_MS / 1000),
+      });
     }
 
     const otp = generateOtp();
@@ -275,15 +344,31 @@ router.post('/forgot-password/request', async (req, res) => {
 // POST /api/auth/forgot-password/resend
 router.post('/forgot-password/resend', async (req, res) => {
   const normalizedEmail = String(req.body?.email || '').toLowerCase().trim();
+  const ip = getClientIp(req);
+  const rateLimitKey = `${ip}|${normalizedEmail || 'unknown'}`;
 
   if (!normalizedEmail) {
     return res.status(400).json({ message: 'Vui lòng nhập email.' });
   }
 
+  const rateLimit = consumeRateLimit(
+    RATE_LIMIT_STORE.forgot,
+    rateLimitKey,
+    FORGOT_RATE_LIMIT_MAX_ATTEMPTS,
+    FORGOT_RATE_LIMIT_WINDOW_MS,
+  );
+
+  if (rateLimit.blocked) {
+    return res.status(429).json({ message: 'Bạn yêu cầu OTP quá nhiều lần. Vui lòng thử lại sau ít phút.' });
+  }
+
   try {
     const [rows] = await pool.query('SELECT id, email FROM users WHERE email = ?', [normalizedEmail]);
     if (rows.length === 0) {
-      return res.status(404).json({ message: 'Email này chưa đăng ký tài khoản.' });
+      return res.json({
+        message: 'Nếu email tồn tại trong hệ thống, OTP đã được gửi. Vui lòng kiểm tra hộp thư.',
+        expiresInSeconds: Math.floor(OTP_EXPIRE_MS / 1000),
+      });
     }
 
     const otp = generateOtp();
@@ -310,6 +395,8 @@ router.post('/forgot-password/reset', async (req, res) => {
   const normalizedEmail = String(req.body?.email || '').toLowerCase().trim();
   const otp = String(req.body?.otp || '').trim();
   const newPassword = String(req.body?.newPassword || '');
+  const ip = getClientIp(req);
+  const rateLimitKey = `${ip}|${normalizedEmail || 'unknown'}`;
 
   if (!normalizedEmail || !otp || !newPassword) {
     return res.status(400).json({ message: 'Vui lòng nhập đầy đủ email, OTP và mật khẩu mới.' });
@@ -319,6 +406,17 @@ router.post('/forgot-password/reset', async (req, res) => {
     return res.status(400).json({
       message: 'Mật khẩu phải có ít nhất 8 ký tự, gồm chữ hoa, chữ thường, số và ký tự đặc biệt.',
     });
+  }
+
+  const rateLimit = consumeRateLimit(
+    RATE_LIMIT_STORE.reset,
+    rateLimitKey,
+    RESET_RATE_LIMIT_MAX_ATTEMPTS,
+    RESET_RATE_LIMIT_WINDOW_MS,
+  );
+
+  if (rateLimit.blocked) {
+    return res.status(429).json({ message: 'Bạn thử đặt lại mật khẩu quá nhiều lần. Vui lòng thử lại sau ít phút.' });
   }
 
   const otpRecord = OTP_STORE.get(normalizedEmail);
@@ -356,9 +454,10 @@ router.post('/forgot-password/reset', async (req, res) => {
     ]);
 
     OTP_STORE.delete(normalizedEmail);
+    resetRateLimit(RATE_LIMIT_STORE.reset, rateLimitKey);
     return res.json({ message: 'Đặt lại mật khẩu thành công.' });
   } catch (err) {
-    return res.status(500).json({ message: 'Lỗi máy chủ: ' + err.message });
+    return res.status(500).json({ message: 'Lỗi máy chủ. Vui lòng thử lại sau.' });
   }
 });
 
@@ -376,7 +475,7 @@ router.get('/me', authMiddleware, async (req, res) => {
     const u = rows[0];
     return res.json({ id: u.id, fullName: u.full_name, email: u.email, phone: u.phone, createdAt: u.created_at });
   } catch (err) {
-    return res.status(500).json({ message: 'Lỗi máy chủ: ' + err.message });
+    return res.status(500).json({ message: 'Lỗi máy chủ. Vui lòng thử lại sau.' });
   }
 });
 

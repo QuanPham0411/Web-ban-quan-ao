@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { filterProductsBySearch } from './catalog';
 import AdminInventory from './AdminInventory';
 import ScrollTopButton from './components/ScrollTopButton';
@@ -21,6 +21,20 @@ const resolveApiBaseUrl = () => {
 
 const API_BASE_URL = resolveApiBaseUrl();
 const USERS_API_URL = `${API_BASE_URL}/api/users`;
+
+const getAdminToken = () => {
+  try {
+    const parsed = JSON.parse(localStorage.getItem('sunnywear-admin-auth') || '{}');
+    return parsed?.token ? String(parsed.token) : '';
+  } catch {
+    return '';
+  }
+};
+
+const buildAdminAuthHeaders = () => {
+  const token = getAdminToken();
+  return token ? { Authorization: `Bearer ${token}` } : {};
+};
 
 const ORDER_STATUS_CLASS = {
   'Đã xác nhận': 'admin-status-confirmed',
@@ -845,9 +859,13 @@ function Admin({
     expiresAt: '',
   });
 
-  const fetchCustomersFromApi = async () => {
+  const fetchCustomersFromApi = useCallback(async () => {
     try {
-      const response = await fetch(USERS_API_URL);
+      const response = await fetch(USERS_API_URL, {
+        headers: {
+          ...buildAdminAuthHeaders(),
+        },
+      });
       const data = await parseApiResponse(response);
 
       if (!response.ok) {
@@ -864,13 +882,13 @@ function Admin({
     } catch (err) {
       console.error('Không thể đồng bộ danh sách khách hàng từ API:', err.message);
     }
-  };
+  }, [onSetCustomers]);
 
   useEffect(() => {
     if (activeTab === 'customers') {
       fetchCustomersFromApi();
     }
-  }, [activeTab]);
+  }, [activeTab, fetchCustomersFromApi]);
 
   const resetDraft = () => {
     setEditingId(null);
@@ -986,6 +1004,9 @@ function Admin({
     try {
       const response = await fetch(`${USERS_API_URL}/${customer.id}`, {
         method: 'DELETE',
+        headers: {
+          ...buildAdminAuthHeaders(),
+        },
       });
       const data = await parseApiResponse(response);
 

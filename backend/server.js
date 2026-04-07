@@ -87,16 +87,13 @@ app.get('/api/health/db', async (req, res) => {
         return res.json({
             ok: true,
             mode: 'database',
-            db: getDbPublicConfig(),
             serverTime: rows[0]?.now || null,
         });
     } catch (err) {
         return res.status(500).json({
             ok: false,
             mode: 'database',
-            db: getDbPublicConfig(),
             message: 'Không thể kết nối MySQL.',
-            error: err.message,
         });
     }
 });

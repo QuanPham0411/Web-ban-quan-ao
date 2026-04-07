@@ -55,7 +55,7 @@ function ForgotPassword({
   const [isLoading, setIsLoading] = useState(false);
 
   useEffect(() => {
-    if (step !== 'otp' || !otpSecondsLeft) {
+    if (step !== 'otp') {
       return undefined;
     }
 

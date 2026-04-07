@@ -1,6 +1,7 @@
-import { useMemo, useState } from 'react';
-import * as subVn from 'sub-vn';
+import { useEffect, useMemo, useState } from 'react';
 import CartIconButton from './components/CartIconButton';
+
+const VIETNAM_ADDRESS_API = 'https://provinces.open-api.vn/api';
 
 const formatPrice = (value) => `${Number(value || 0).toLocaleString('vi-VN')}đ`;
 
@@ -205,36 +206,92 @@ function Checkout({
   const [phoneError, setPhoneError] = useState('');
   const [selectedVoucherCode, setSelectedVoucherCode] = useState('');
   const [voucherMessage, setVoucherMessage] = useState('');
-  const provinces = useMemo(() => {
-    try {
-      return subVn.getProvinces();
-    } catch {
-      return [];
-    }
+  const [provinces, setProvinces] = useState([]);
+  const [districts, setDistricts] = useState([]);
+  const [wards, setWards] = useState([]);
+  const [isAddressLoading, setIsAddressLoading] = useState(false);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    const loadProvinces = async () => {
+      setIsAddressLoading(true);
+      try {
+        const response = await fetch(`${VIETNAM_ADDRESS_API}/p/`, { signal: controller.signal });
+        if (!response.ok) {
+          throw new Error('cannot load provinces');
+        }
+        const data = await response.json();
+        setProvinces(Array.isArray(data) ? data : []);
+      } catch {
+        setProvinces([]);
+      } finally {
+        setIsAddressLoading(false);
+      }
+    };
+
+    loadProvinces();
+    return () => controller.abort();
   }, []);
 
-  const districts = useMemo(() => {
+  useEffect(() => {
     if (!addressSelection.provinceCode) {
-      return [];
+      setDistricts([]);
+      setWards([]);
+      return;
     }
 
-    try {
-      return subVn.getDistrictsByProvinceCode(addressSelection.provinceCode);
-    } catch {
-      return [];
-    }
+    const controller = new AbortController();
+    const loadDistricts = async () => {
+      setIsAddressLoading(true);
+      try {
+        const response = await fetch(`${VIETNAM_ADDRESS_API}/p/${addressSelection.provinceCode}?depth=2`, {
+          signal: controller.signal,
+        });
+        if (!response.ok) {
+          throw new Error('cannot load districts');
+        }
+
+        const data = await response.json();
+        setDistricts(Array.isArray(data?.districts) ? data.districts : []);
+      } catch {
+        setDistricts([]);
+      } finally {
+        setIsAddressLoading(false);
+      }
+    };
+
+    loadDistricts();
+    return () => controller.abort();
   }, [addressSelection.provinceCode]);
 
-  const wards = useMemo(() => {
+  useEffect(() => {
     if (!addressSelection.districtCode) {
-      return [];
+      setWards([]);
+      return;
     }
 
-    try {
-      return subVn.getWardsByDistrictCode(addressSelection.districtCode);
-    } catch {
-      return [];
-    }
+    const controller = new AbortController();
+    const loadWards = async () => {
+      setIsAddressLoading(true);
+      try {
+        const response = await fetch(`${VIETNAM_ADDRESS_API}/d/${addressSelection.districtCode}?depth=2`, {
+          signal: controller.signal,
+        });
+        if (!response.ok) {
+          throw new Error('cannot load wards');
+        }
+
+        const data = await response.json();
+        setWards(Array.isArray(data?.wards) ? data.wards : []);
+      } catch {
+        setWards([]);
+      } finally {
+        setIsAddressLoading(false);
+      }
+    };
+
+    loadWards();
+    return () => controller.abort();
   }, [addressSelection.districtCode]);
 
   const totalPrice = cartItems.reduce((total, item) => total + item.priceNumber * item.quantity, 0);
@@ -479,7 +536,13 @@ function Checkout({
               value={addressSelection.provinceCode}
               onChange={(e) => handleProvinceChange(e.target.value)}
             >
-              <option value="">{provinces.length > 0 ? 'Chọn Tỉnh/Thành phố' : 'Không có dữ liệu tỉnh/thành'}</option>
+              <option value="">
+                {isAddressLoading
+                  ? 'Dang tai tinh/thanh...'
+                  : provinces.length > 0
+                  ? 'Chọn Tỉnh/Thành phố'
+                  : 'Không có dữ liệu tỉnh/thành'}
+              </option>
               {provinces.map((province) => (
                 <option key={province.code} value={province.code}>
                   {province.name}
@@ -498,6 +561,8 @@ function Checkout({
               <option value="">
                 {!addressSelection.provinceCode
                   ? 'Vui lòng chọn Tỉnh/Thành trước'
+                  : isAddressLoading
+                  ? 'Dang tai quan/huyen...'
                   : districts.length === 0
                   ? 'Không có dữ liệu quận/huyện'
                   : 'Chọn Quận/Huyện'}
@@ -520,6 +585,8 @@ function Checkout({
               <option value="">
                 {!addressSelection.districtCode
                   ? 'Vui lòng chọn Quận/Huyện trước'
+                  : isAddressLoading
+                  ? 'Dang tai phuong/xa...'
                   : wards.length === 0
                   ? 'Không có dữ liệu phường/xã'
                   : 'Chọn Phường/Xã'}
