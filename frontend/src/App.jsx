@@ -1,19 +1,20 @@
-import { useEffect, useState } from 'react';
+﻿import { Suspense, lazy, useEffect, useState } from 'react';
 import { catalogProducts } from './catalog';
-import Home from './Home';
-import Products from './Products';
-import Offers from './Offers';
-import Users from './Users';
-import Orders from './Orders';
-import Checkout from './Checkout';
-import Login from './Login';
-import Register from './Register';
-import ForgotPassword from './ForgotPassword';
-import Cart from './Cart';
-import ProductDetail from './ProductDetail';
-import Admin from './Admin';
-import AdminLogin from './AdminLogin';
 import './styles/App.css';
+
+const Home = lazy(() => import('./Home'));
+const Products = lazy(() => import('./Products'));
+const Offers = lazy(() => import('./Offers'));
+const Users = lazy(() => import('./Users'));
+const Orders = lazy(() => import('./Orders'));
+const Checkout = lazy(() => import('./Checkout'));
+const Login = lazy(() => import('./Login'));
+const Register = lazy(() => import('./Register'));
+const ForgotPassword = lazy(() => import('./ForgotPassword'));
+const Cart = lazy(() => import('./Cart'));
+const ProductDetail = lazy(() => import('./ProductDetail'));
+const Admin = lazy(() => import('./Admin'));
+const AdminLogin = lazy(() => import('./AdminLogin'));
 
 const PRODUCTION_API_BASE_URL = 'https://api-ban-quan-ao-backend.onrender.com';
 
@@ -343,6 +344,12 @@ const getInitialAuthState = () => {
   return { isLoggedIn: false, accountLabel: 'Khách hàng', email: '' };
 };
 
+const withSuspense = (content) => (
+  <Suspense fallback={<div className="auth-page"><div className="auth-card-wrap"><div className="auth-card"><p>Dang tai du lieu...</p></div></div></div>}>
+    {content}
+  </Suspense>
+);
+
 function App() {
   const [page, setPage] = useState(getCurrentPage);
   const [authState, setAuthState] = useState(getInitialAuthState);
@@ -389,66 +396,6 @@ function App() {
       window.removeEventListener('hashchange', handleHashChange);
     };
   }, []);
-
-  const handleAuth = (mode) => {
-    const authData = {
-      label: mode === 'register' ? 'Thành viên mới' : 'Khách hàng',
-      mode,
-      updatedAt: Date.now(),
-    };
-
-    localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(authData));
-    localStorage.setItem(LAST_VISIT_STORAGE_KEY, String(Date.now()));
-    setAuthState({ isLoggedIn: true, accountLabel: authData.label, email: '' });
-  };
-
-  const upsertCustomer = ({ email, name, phone, password }) => {
-    const normalizedCustomerEmail = normalizeEmail(email);
-
-    if (!normalizedCustomerEmail || normalizedCustomerEmail === normalizeEmail(ADMIN_EMAIL)) {
-      return;
-    }
-
-    setSharedCustomers((previous) => {
-      const existingCustomer = previous.find((customer) => normalizeEmail(customer.email) === normalizedCustomerEmail);
-
-      if (existingCustomer) {
-        return previous.map((customer) =>
-          normalizeEmail(customer.email) === normalizedCustomerEmail
-            ? {
-                ...customer,
-                name: name?.trim() || customer.name,
-                phone: phone?.trim() || customer.phone,
-                password: password || customer.password,
-              }
-            : customer,
-        );
-      }
-
-      return [
-        {
-          id: `USR-${String(previous.length + 1).padStart(3, '0')}`,
-          name: name?.trim() || normalizedCustomerEmail.split('@')[0] || 'Khách hàng mới',
-          email: normalizedCustomerEmail,
-          phone: phone?.trim() || '',
-          password: password || '',
-          orders: 0,
-          joined: formatDate(new Date()),
-        },
-        ...previous,
-      ];
-    });
-  };
-
-  const handleUpdateCustomer = (updatedCustomer) => {
-    setSharedCustomers((previous) =>
-      previous.map((customer) =>
-        normalizeEmail(customer.email) === normalizeEmail(updatedCustomer.email)
-          ? { ...customer, ...updatedCustomer }
-          : customer
-      )
-    );
-  };
 
   const handleLoginSubmit = async ({ email, password }) => {
     const normalizedEmail = normalizeEmail(email);
@@ -802,7 +749,7 @@ function App() {
   const visibleCartCount = authState.isLoggedIn ? totalCartItems : 0;
 
   if (page === 'products') {
-    return (
+    return withSuspense(
       <Products
         authState={authState}
         onLogout={handleLogout}
@@ -822,7 +769,7 @@ function App() {
   }
 
   if (page === 'offers') {
-    return (
+    return withSuspense(
       <Offers
         authState={authState}
         onLogout={handleLogout}
@@ -842,7 +789,7 @@ function App() {
   }
 
   if (page === 'login') {
-    return (
+    return withSuspense(
       <Login
         onGoHome={handleGoHome}
         onGoProducts={handleGoProducts}
@@ -860,7 +807,7 @@ function App() {
   }
 
   if (page === 'register') {
-    return (
+    return withSuspense(
       <Register
         onGoHome={handleGoHome}
         onGoProducts={handleGoProducts}
@@ -877,7 +824,7 @@ function App() {
   }
 
   if (page === 'forgot-password') {
-    return (
+    return withSuspense(
       <ForgotPassword
         onGoHome={handleGoHome}
         onGoProducts={handleGoProducts}
@@ -891,7 +838,7 @@ function App() {
   }
 
   if (page === 'users') {
-    return (
+    return withSuspense(
       <Users
         authState={authState}
         onLogout={handleLogout}
@@ -909,7 +856,7 @@ function App() {
   }
 
   if (page === 'orders') {
-    return (
+    return withSuspense(
       <Orders
         authState={authState}
         orders={sharedOrders}
@@ -929,7 +876,7 @@ function App() {
   }
 
   if (page === 'cart') {
-    return (
+    return withSuspense(
       <Cart
         authState={authState}
         cartItems={cartItems}
@@ -949,7 +896,7 @@ function App() {
   }
 
   if (page === 'checkout') {
-    return (
+    return withSuspense(
       <Checkout
         authState={authState}
         cartItems={cartItems}
@@ -972,7 +919,7 @@ function App() {
   }
 
   if (page === 'product-detail') {
-    return (
+    return withSuspense(
       <ProductDetail
         authState={authState}
         product={selectedProduct}
@@ -995,21 +942,21 @@ function App() {
 
   if (page === 'admin-login') {
     if (adminAuth.isAdmin) {
-      return <Admin adminAuth={adminAuth} onAdminLogout={handleAdminLogout} products={sharedProducts} onSetProducts={setSharedProducts} customers={sharedCustomers} onSetCustomers={setSharedCustomers} orders={sharedOrders} onSetOrders={setSharedOrders} onDeleteOrder={handleAdminDeleteOrder} promotions={sharedPromotions} onSetPromotions={setSharedPromotions} vouchers={sharedVouchers} onSetVouchers={setSharedVouchers} />;
+      return withSuspense(<Admin adminAuth={adminAuth} onAdminLogout={handleAdminLogout} products={sharedProducts} onSetProducts={setSharedProducts} customers={sharedCustomers} onSetCustomers={setSharedCustomers} orders={sharedOrders} onSetOrders={setSharedOrders} onDeleteOrder={handleAdminDeleteOrder} promotions={sharedPromotions} onSetPromotions={setSharedPromotions} vouchers={sharedVouchers} onSetVouchers={setSharedVouchers} />);
     }
 
-    return <AdminLogin onAdminLoginSubmit={handleAdminLoginSubmit} onGoHome={handleGoHome} />;
+    return withSuspense(<AdminLogin onAdminLoginSubmit={handleAdminLoginSubmit} onGoHome={handleGoHome} />);
   }
 
   if (page === 'admin') {
     if (!adminAuth.isAdmin) {
-      return <AdminLogin onAdminLoginSubmit={handleAdminLoginSubmit} onGoHome={handleGoHome} />;
+      return withSuspense(<AdminLogin onAdminLoginSubmit={handleAdminLoginSubmit} onGoHome={handleGoHome} />);
     }
 
-    return <Admin adminAuth={adminAuth} onAdminLogout={handleAdminLogout} products={sharedProducts} onSetProducts={setSharedProducts} customers={sharedCustomers} onSetCustomers={setSharedCustomers} orders={sharedOrders} onSetOrders={setSharedOrders} onDeleteOrder={handleAdminDeleteOrder} promotions={sharedPromotions} onSetPromotions={setSharedPromotions} vouchers={sharedVouchers} onSetVouchers={setSharedVouchers} />;
+    return withSuspense(<Admin adminAuth={adminAuth} onAdminLogout={handleAdminLogout} products={sharedProducts} onSetProducts={setSharedProducts} customers={sharedCustomers} onSetCustomers={setSharedCustomers} orders={sharedOrders} onSetOrders={setSharedOrders} onDeleteOrder={handleAdminDeleteOrder} promotions={sharedPromotions} onSetPromotions={setSharedPromotions} vouchers={sharedVouchers} onSetVouchers={setSharedVouchers} />);
   }
 
-  return (
+  return withSuspense(
     <Home
       authState={authState}
       onLogout={handleLogout}

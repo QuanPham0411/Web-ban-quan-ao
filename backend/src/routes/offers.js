@@ -9,7 +9,7 @@ router.get('/', async (req, res) => {
     const [rows] = await pool.query('SELECT * FROM offers WHERE is_active = true ORDER BY id');
     return res.json({ offers: rows });
   } catch (err) {
-    return res.status(500).json({ message: 'Lỗi máy chủ: ' + err.message });
+    return res.status(500).json({ message: 'Lỗi máy chủ. Vui lòng thử lại sau.' });
   }
 });
 
@@ -21,16 +21,21 @@ router.get('/vouchers', async (req, res) => {
     );
     return res.json({ vouchers: rows });
   } catch (err) {
-    return res.status(500).json({ message: 'Lỗi máy chủ: ' + err.message });
+    return res.status(500).json({ message: 'Lỗi máy chủ. Vui lòng thử lại sau.' });
   }
 });
 
 // POST /api/offers/vouchers/validate — kiểm tra và tính giảm giá voucher
 router.post('/vouchers/validate', async (req, res) => {
   const { code, orderAmount = 0 } = req.body;
+  const safeOrderAmount = Number(orderAmount);
 
   if (!code) {
     return res.status(400).json({ message: 'Vui lòng nhập mã voucher.' });
+  }
+
+  if (!Number.isFinite(safeOrderAmount) || safeOrderAmount < 0) {
+    return res.status(400).json({ valid: false, message: 'Giá trị đơn hàng không hợp lệ.' });
   }
 
   try {
@@ -49,7 +54,7 @@ router.post('/vouchers/validate', async (req, res) => {
       return res.status(400).json({ valid: false, message: 'Mã voucher đã hết hạn.' });
     }
 
-    if (Number(orderAmount) < voucher.min_order) {
+    if (safeOrderAmount < voucher.min_order) {
       return res.status(400).json({
         valid: false,
         message: `Đơn hàng tối thiểu ${Number(voucher.min_order).toLocaleString('vi-VN')}đ để dùng mã này.`,
@@ -58,7 +63,7 @@ router.post('/vouchers/validate', async (req, res) => {
 
     const discount =
       voucher.discount_type === 'percent'
-        ? Math.round(Number(orderAmount) * voucher.discount_value / 100)
+        ? Math.round(safeOrderAmount * voucher.discount_value / 100)
         : voucher.discount_value;
 
     return res.json({
@@ -70,7 +75,7 @@ router.post('/vouchers/validate', async (req, res) => {
       message: `Áp dụng thành công! Giảm ${discount.toLocaleString('vi-VN')}đ`,
     });
   } catch (err) {
-    return res.status(500).json({ message: 'Lỗi máy chủ: ' + err.message });
+    return res.status(500).json({ message: 'Lỗi máy chủ. Vui lòng thử lại sau.' });
   }
 });
 

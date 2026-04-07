@@ -20,6 +20,25 @@ const resolveApiBaseUrl = () => {
 const API_BASE_URL = resolveApiBaseUrl();
 const USERS_API_URL = `${API_BASE_URL}/api/users`;
 
+const getAuthToken = () => {
+  try {
+    const adminAuth = JSON.parse(localStorage.getItem('sunnywear-admin-auth') || '{}');
+    if (adminAuth?.token) {
+      return String(adminAuth.token);
+    }
+
+    const userAuth = JSON.parse(localStorage.getItem('sunnywear-auth') || '{}');
+    return userAuth?.token ? String(userAuth.token) : '';
+  } catch {
+    return '';
+  }
+};
+
+const buildAuthHeaders = () => {
+  const token = getAuthToken();
+  return token ? { Authorization: `Bearer ${token}` } : {};
+};
+
 function Users({
   authState,
   onLogout,
@@ -49,9 +68,16 @@ function Users({
     setError('');
 
     try {
-      const response = await fetch(USERS_API_URL);
+      const response = await fetch(USERS_API_URL, {
+        headers: {
+          ...buildAuthHeaders(),
+        },
+      });
 
       if (!response.ok) {
+        if (response.status === 401 || response.status === 403) {
+          throw new Error('Bạn cần đăng nhập bằng tài khoản admin/staff để xem danh sách users.');
+        }
         throw new Error(`HTTP ${response.status}`);
       }
 
@@ -77,7 +103,11 @@ function Users({
     setSuccessMessage('');
 
     try {
-      const response = await fetch(`${USERS_API_URL}/${userId}`);
+      const response = await fetch(`${USERS_API_URL}/${userId}`, {
+        headers: {
+          ...buildAuthHeaders(),
+        },
+      });
       const data = await response.json();
 
       if (!response.ok) {
@@ -119,6 +149,7 @@ function Users({
         method,
         headers: {
           'Content-Type': 'application/json',
+          ...buildAuthHeaders(),
         },
         body: JSON.stringify({ name: trimmedName }),
       });
@@ -160,6 +191,9 @@ function Users({
     try {
       const response = await fetch(`${USERS_API_URL}/${user.id}`, {
         method: 'DELETE',
+        headers: {
+          ...buildAuthHeaders(),
+        },
       });
       const data = await response.json();
 

@@ -6,8 +6,10 @@ const router = express.Router();
 // GET /api/products?category=all|women|men|kids|intimates&page=1&limit=50
 router.get('/', async (req, res) => {
   const { category, page = 1, limit = 50 } = req.query;
-  const safeLimit = Number.isNaN(Number(limit)) ? 50 : Number(limit);
-  const safePage = Number.isNaN(Number(page)) ? 1 : Number(page);
+  const parsedLimit = Number(limit);
+  const parsedPage = Number(page);
+  const safeLimit = Number.isInteger(parsedLimit) ? Math.min(Math.max(parsedLimit, 1), 100) : 50;
+  const safePage = Number.isInteger(parsedPage) ? Math.max(parsedPage, 1) : 1;
   const offset = (safePage - 1) * safeLimit;
 
   try {
@@ -44,7 +46,7 @@ router.get('/', async (req, res) => {
 
     return res.json({ products: rows, total, page: safePage, limit: safeLimit });
   } catch (err) {
-    return res.status(500).json({ message: 'Lỗi máy chủ: ' + err.message });
+    return res.status(500).json({ message: 'Lỗi máy chủ. Vui lòng thử lại sau.' });
   }
 });
 
@@ -57,7 +59,7 @@ router.get('/:id', async (req, res) => {
     }
     return res.json(rows[0]);
   } catch (err) {
-    return res.status(500).json({ message: 'Lỗi máy chủ: ' + err.message });
+    return res.status(500).json({ message: 'Lỗi máy chủ. Vui lòng thử lại sau.' });
   }
 });
 

@@ -1,9 +1,22 @@
 const express = require('express');
 const bcrypt = require('bcryptjs');
+const crypto = require('crypto');
 const { pool } = require('../db');
+const authMiddleware = require('../middleware/authMiddleware');
 
 const router = express.Router();
-const DEFAULT_PASSWORD = '123456';
+const generateTempPassword = () => crypto.randomBytes(9).toString('base64url');
+
+const requireAdminOrStaff = (req, res, next) => {
+  const role = String(req.user?.role || '').toLowerCase();
+  if (role !== 'admin' && role !== 'staff') {
+    return res.status(403).json({ message: 'Bạn không có quyền truy cập tài nguyên này.' });
+  }
+  return next();
+};
+
+router.use(authMiddleware);
+router.use(requireAdminOrStaff);
 
 const mapUser = (user) => ({
   id: user.id,
@@ -25,7 +38,7 @@ router.get('/', async (req, res) => {
 
     return res.json(rows.map(mapUser));
   } catch (err) {
-    return res.status(500).json({ message: 'Lỗi máy chủ: ' + err.message });
+    return res.status(500).json({ message: 'Lỗi máy chủ. Vui lòng thử lại sau.' });
   }
 });
 
@@ -47,7 +60,7 @@ router.get('/:id', async (req, res) => {
 
     return res.json(mapUser(rows[0]));
   } catch (err) {
-    return res.status(500).json({ message: 'Lỗi máy chủ: ' + err.message });
+    return res.status(500).json({ message: 'Lỗi máy chủ. Vui lòng thử lại sau.' });
   }
 });
 
@@ -60,7 +73,7 @@ router.post('/', async (req, res) => {
 
   try {
     const fallbackEmail = buildFallbackEmail();
-    const passwordHash = await bcrypt.hash(DEFAULT_PASSWORD, 10);
+    const passwordHash = await bcrypt.hash(generateTempPassword(), 10);
     const [result] = await pool.query(
       'INSERT INTO users (full_name, email, phone, password_hash) VALUES (?, ?, ?, ?)',
       [name, fallbackEmail, null, passwordHash],
@@ -76,7 +89,7 @@ router.post('/', async (req, res) => {
       orders: 0,
     });
   } catch (err) {
-    return res.status(500).json({ message: 'Lỗi máy chủ: ' + err.message });
+    return res.status(500).json({ message: 'Lỗi máy chủ. Vui lòng thử lại sau.' });
   }
 });
 
@@ -100,7 +113,7 @@ router.put('/:id', async (req, res) => {
 
     return res.json({ id: userId, name });
   } catch (err) {
-    return res.status(500).json({ message: 'Lỗi máy chủ: ' + err.message });
+    return res.status(500).json({ message: 'Lỗi máy chủ. Vui lòng thử lại sau.' });
   }
 });
 
@@ -119,7 +132,7 @@ router.delete('/:id', async (req, res) => {
 
     return res.json({ message: 'Đã xóa user thành công.', id: userId });
   } catch (err) {
-    return res.status(500).json({ message: 'Lỗi máy chủ: ' + err.message });
+    return res.status(500).json({ message: 'Lỗi máy chủ. Vui lòng thử lại sau.' });
   }
 });
 
