@@ -106,10 +106,20 @@ function Cart({
 
                 <div className="cart-item-actions">
                   <div className="cart-quantity">
-                    <button type="button" onClick={() => onUpdateCartQuantity(item.id, item.quantity - 1)}>
+                    <button type="button" onClick={() => onUpdateCartQuantity(item.id, Math.max(1, item.quantity - 1))}>
                       -
                     </button>
-                    <span>{item.quantity}</span>
+                    <input
+                      type="number"
+                      value={item.quantity}
+                      onChange={(e) => {
+                        const val = parseInt(e.target.value, 10);
+                        if (!isNaN(val) && val > 0) {
+                          onUpdateCartQuantity(item.id, val);
+                        }
+                      }}
+                      style={{ width: '40px', textAlign: 'center', border: '1px solid #e2e8f0', borderRadius: '4px' }}
+                    />
                     <button type="button" onClick={() => onUpdateCartQuantity(item.id, item.quantity + 1)}>
                       +
                     </button>

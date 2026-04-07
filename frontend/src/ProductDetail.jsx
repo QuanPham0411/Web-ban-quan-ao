@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import ProductCard from './components/ProductCard';
 import CartIconButton from './components/CartIconButton';
 
 const getSizeOptions = (sizeTag) => {
@@ -21,10 +22,19 @@ function ProductDetail({
   onGoProducts,
   onGoOffers,
   onGoCart,
+  onGoCheckout,
+  onGoProductDetail,
   onGoLogin,
   onGoRegister,
+  products = [],
 }) {
   const [sizeSelection, setSizeSelection] = useState({ productId: null, size: null });
+  const [quantity, setQuantity] = useState(1);
+
+  // Filter 4 products from same category, excluding current
+  const relatedProducts = products
+    .filter((p) => p.categoryKey === product?.categoryKey && p.id !== product?.id)
+    .slice(0, 4);
 
   const isMatchedProduct = product && product.id === currentProductId;
   const sizeOptions = isMatchedProduct ? getSizeOptions(product.size) : null;
@@ -32,6 +42,21 @@ function ProductDetail({
 
   const handleSelectSize = (size) => {
     setSizeSelection({ productId: product.id, size });
+  };
+
+  const handleQuantityChange = (val) => {
+    const num = parseInt(val, 10);
+    if (!isNaN(num) && num > 0) {
+      setQuantity(num);
+    } else if (val === '') {
+      setQuantity('');
+    }
+  };
+
+  const handleQuantityBlur = () => {
+    if (quantity === '' || quantity < 1) {
+      setQuantity(1);
+    }
   };
 
   if (!isMatchedProduct) {
@@ -144,6 +169,37 @@ function ProductDetail({
             </div>
           )}
 
+          <div className="quantity-picker" style={{ marginTop: '20px', display: 'flex', alignItems: 'center', gap: '12px' }}>
+            <span className="picker-label" style={{ fontWeight: '700' }}>Số lượng:</span>
+            <div className="quantity-controls" style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+              <button
+                type="button"
+                className="quantity-btn"
+                style={{ width: '32px', height: '32px', borderRadius: '4px', border: '1px solid #e2e8f0', background: '#fff', cursor: 'pointer' }}
+                onClick={() => setQuantity(Math.max(1, (parseInt(quantity) || 1) - 1))}
+              >
+                -
+              </button>
+              <input
+                type="number"
+                className="quantity-input"
+                style={{ width: '60px', height: '32px', textAlign: 'center', border: '1px solid #e2e8f0', borderRadius: '4px' }}
+                value={quantity}
+                onChange={(e) => handleQuantityChange(e.target.value)}
+                onBlur={handleQuantityBlur}
+                min="1"
+              />
+              <button
+                type="button"
+                className="quantity-btn"
+                style={{ width: '32px', height: '32px', borderRadius: '4px', border: '1px solid #e2e8f0', background: '#fff', cursor: 'pointer' }}
+                onClick={() => setQuantity((parseInt(quantity) || 0) + 1)}
+              >
+                +
+              </button>
+            </div>
+          </div>
+
           <p className="product-detail-price">{product.priceText}</p>
 
           <div className="product-detail-actions">
@@ -154,7 +210,7 @@ function ProductDetail({
               type="button"
               className="catalog-button"
               disabled={!authState.isLoggedIn || (sizeOptions !== null && !selectedSize)}
-              onClick={() => onAddToCart({ ...product, selectedSize: selectedSize ?? null })}
+              onClick={() => onAddToCart({ ...product, selectedSize: selectedSize ?? null, customQuantity: parseInt(quantity) || 1 })}
             >
               {!authState.isLoggedIn
                 ? 'Chỉ xem - cần đăng nhập'
@@ -162,9 +218,43 @@ function ProductDetail({
                 ? 'Chọn size để thêm vào giỏ'
                 : 'Thêm vào giỏ'}
             </button>
+            <button
+              type="button"
+              className="btn-primary"
+              style={{ marginLeft: '12px' }}
+              disabled={!authState.isLoggedIn || (sizeOptions !== null && !selectedSize)}
+              onClick={() => {
+                onAddToCart({ ...product, selectedSize: selectedSize ?? null, customQuantity: parseInt(quantity) || 1 });
+                if (typeof onGoCheckout === 'function') onGoCheckout();
+              }}
+            >
+              Thanh toán
+            </button>
           </div>
         </div>
       </section>
+
+      {relatedProducts.length > 0 && (
+        <section className="related-products-section" style={{ marginTop: '40px' }}>
+          <div className="section-heading">
+            <h2>Sản phẩm tương tự</h2>
+            <p>Có thể bạn cũng sẽ thích những mẫu này</p>
+          </div>
+          <div className="products-grid" style={{ marginTop: '20px' }}>
+            {relatedProducts.map((p) => (
+              <ProductCard
+                key={p.id}
+                product={p}
+                canAddToCart={authState.isLoggedIn}
+                onAddToCart={onAddToCart}
+                onViewDetail={() => {
+                  onGoProductDetail(p);
+                }}
+              />
+            ))}
+          </div>
+        </section>
+      )}
     </div>
   );
 }
