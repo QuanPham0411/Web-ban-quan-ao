@@ -18,9 +18,7 @@ function Home({
   products = [],
 }) {
   // Pick 4 featured products (e.g., from different categories)
-  const featuredProducts = products.length > 0 
-    ? [products[0], products[50], products[100], products[150]].filter(Boolean)
-    : [];
+  const featuredProducts = products.slice(0, 4);
 
   return (
     <div className="home-page">

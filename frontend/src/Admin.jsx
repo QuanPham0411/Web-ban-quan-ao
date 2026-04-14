@@ -20,6 +20,7 @@ const resolveApiBaseUrl = () => {
 };
 
 const API_BASE_URL = resolveApiBaseUrl();
+const PRODUCTS_API_URL = `${API_BASE_URL}/api/products`;
 const USERS_API_URL = `${API_BASE_URL}/api/users`;
 
 const getAdminToken = () => {
@@ -34,6 +35,27 @@ const getAdminToken = () => {
 const buildAdminAuthHeaders = () => {
   const token = getAdminToken();
   return token ? { Authorization: `Bearer ${token}` } : {};
+};
+
+const mapProductFromApi = (product) => {
+  const priceNumber = Number(product?.price || 0);
+  const stockLabel = String(product?.stock_label || 'Còn hàng').trim() || 'Còn hàng';
+  const image = String(product?.image_url || product?.image || product?.imageUrl || '').trim();
+
+  return {
+    id: String(product?.id || ''),
+    categoryKey: String(product?.category_key || 'women'),
+    categoryLabel: String(product?.category_label || 'Nữ'),
+    name: String(product?.name || ''),
+    price: String(product?.price_formatted || `${priceNumber.toLocaleString('vi-VN')}đ`),
+    priceNumber,
+    priceText: String(product?.price_formatted || `${priceNumber.toLocaleString('vi-VN')}đ`),
+    description: String(product?.description || ''),
+    image,
+    size: String(product?.size_label || ''),
+    stockLabel,
+    quantity: Number(product?.quantity ?? 0),
+  };
 };
 
 const ORDER_STATUS_CLASS = {
@@ -172,6 +194,21 @@ const formatExpireLabel = (value) => {
   }
 
   return `Hết hạn: ${formatDateToDmy(date)}`;
+};
+
+const formatPromotionDiscountLabel = (promotion) => {
+  const type = String(promotion.discountType || '').toLowerCase();
+  const value = Number(promotion.discountValue || 0);
+
+  if (!Number.isFinite(value) || value <= 0) {
+    return 'Chưa có mức giảm';
+  }
+
+  if (type === 'fixed') {
+    return `Giảm ${formatVnd(value)}đ`;
+  }
+
+  return `Giảm ${value}%`;
 };
 
 const toInputDateValue = (value) => {
@@ -701,6 +738,28 @@ function OffersTab({
             onChange={(e) => onPromotionDraftChange('title', e.target.value)}
             required
           />
+          <select
+            value={promotionDraft.discountType}
+            onChange={(e) => onPromotionDraftChange('discountType', e.target.value)}
+          >
+            <option value="percent">Giảm theo %</option>
+            <option value="fixed">Giảm theo số tiền</option>
+          </select>
+          <input
+            type="number"
+            min="1"
+            placeholder={promotionDraft.discountType === 'percent' ? 'Giảm bao nhiêu %' : 'Giảm bao nhiêu đ'}
+            value={promotionDraft.discountValue}
+            onChange={(e) => onPromotionDraftChange('discountValue', e.target.value)}
+            required
+          />
+          <input
+            type="number"
+            min="0"
+            placeholder="Đơn tối thiểu (0 nếu không giới hạn)"
+            value={promotionDraft.minOrder}
+            onChange={(e) => onPromotionDraftChange('minOrder', e.target.value)}
+          />
           <input
             type="date"
             value={promotionDraft.expiresAt}
@@ -733,6 +792,7 @@ function OffersTab({
               </div>
               {offer.isExpired ? <span className="admin-expired-pill">Hết hạn</span> : null}
               <h3>{offer.title}</h3>
+              <p><strong>{formatPromotionDiscountLabel(offer)}</strong></p>
               <p>{offer.description}</p>
               <div className="admin-row-actions">
                 <button type="button" className="admin-action-btn admin-action-edit" onClick={() => onEditPromotion(offer)}>
@@ -851,6 +911,9 @@ function Admin({
     title: '',
     expiresAt: '',
     description: '',
+    discountType: 'percent',
+    discountValue: '10',
+    minOrder: '0',
   });
   const [voucherDraft, setVoucherDraft] = useState({
     code: '',
@@ -923,6 +986,9 @@ function Admin({
       title: '',
       expiresAt: '',
       description: '',
+      discountType: 'percent',
+      discountValue: '10',
+      minOrder: '0',
     });
   };
 
@@ -936,7 +1002,7 @@ function Admin({
     });
   };
 
-  const handleSubmitProduct = (e) => {
+  const handleSubmitProduct = async (e) => {
     e.preventDefault();
 
     const priceNumber = parsePriceInput(productDraft.priceInput);
@@ -957,14 +1023,43 @@ function Admin({
       quantity: parseInt(productDraft.quantity, 10) || 0,
     };
 
-    if (editingId) {
-      onSetProducts((prev) => prev.map((item) => (item.id === editingId ? nextProduct : item)));
-      resetDraft();
-      return;
-    }
+    const requestBody = {
+      ...nextProduct,
+      price: priceNumber,
+      priceFormatted: formatVnd(priceNumber),
+      imageUrl: productDraft.image.trim(),
+      sizeLabel: productDraft.size,
+      stockLabel: productDraft.stock,
+      quantity: parseInt(productDraft.quantity, 10) || 0,
+    };
 
-    onSetProducts((prev) => [nextProduct, ...prev]);
-    resetDraft();
+    try {
+      const response = await fetch(editingId ? `${PRODUCTS_API_URL}/${editingId}` : PRODUCTS_API_URL, {
+        method: editingId ? 'PUT' : 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...buildAdminAuthHeaders(),
+        },
+        body: JSON.stringify(requestBody),
+      });
+      const data = await parseApiResponse(response);
+
+      if (!response.ok) {
+        throw new Error(data.message || `HTTP ${response.status}`);
+      }
+
+      const savedProduct = mapProductFromApi(data.product || requestBody);
+
+      if (editingId) {
+        onSetProducts((prev) => prev.map((item) => (item.id === editingId ? savedProduct : item)));
+      } else {
+        onSetProducts((prev) => [savedProduct, ...prev]);
+      }
+
+      resetDraft();
+    } catch (err) {
+      window.alert(`Không thể lưu sản phẩm: ${err.message}`);
+    }
   };
 
   const handleStartEditProduct = (product) => {
@@ -981,15 +1076,32 @@ function Admin({
     });
   };
 
-  const handleDeleteProduct = (productId) => {
+  const handleDeleteProduct = async (productId) => {
     const product = products.find((item) => item.id === productId);
     const name = product ? `"${product.name}"` : 'sản phẩm này';
     if (!window.confirm(`Bạn có chắc muốn xóa ${name} không?\nHành động này không thể hoàn tác.`)) {
       return;
     }
-    onSetProducts((prev) => prev.filter((item) => item.id !== productId));
-    if (editingId === productId) {
-      resetDraft();
+
+    try {
+      const response = await fetch(`${PRODUCTS_API_URL}/${productId}`, {
+        method: 'DELETE',
+        headers: {
+          ...buildAdminAuthHeaders(),
+        },
+      });
+      const data = await parseApiResponse(response);
+
+      if (!response.ok) {
+        throw new Error(data.message || `HTTP ${response.status}`);
+      }
+
+      onSetProducts((prev) => prev.filter((item) => item.id !== productId));
+      if (editingId === productId) {
+        resetDraft();
+      }
+    } catch (err) {
+      window.alert(`Không thể xóa sản phẩm: ${err.message}`);
     }
   };
 
@@ -1078,7 +1190,20 @@ function Admin({
   const handleSubmitPromotion = (e) => {
     e.preventDefault();
 
+    const discountValue = Number(promotionDraft.discountValue);
+    const minOrder = Number(promotionDraft.minOrder || 0);
+
     if (!promotionDraft.title.trim() || !promotionDraft.description.trim() || !promotionDraft.expiresAt) {
+      return;
+    }
+
+    if (!Number.isFinite(discountValue) || discountValue <= 0) {
+      window.alert('Vui lòng nhập mức giảm hợp lệ.');
+      return;
+    }
+
+    if (!Number.isFinite(minOrder) || minOrder < 0) {
+      window.alert('Giá trị đơn tối thiểu không hợp lệ.');
       return;
     }
 
@@ -1089,6 +1214,9 @@ function Admin({
       expiresAt: promotionDraft.expiresAt,
       expire: formatExpireLabel(promotionDraft.expiresAt),
       description: promotionDraft.description.trim(),
+      discountType: promotionDraft.discountType,
+      discountValue,
+      minOrder,
     };
 
     if (editingPromotionId) {
@@ -1108,6 +1236,9 @@ function Admin({
       title: promotion.title,
       expiresAt: toInputDateValue(promotion.expiresAt || promotion.expire),
       description: promotion.description,
+      discountType: promotion.discountType || 'percent',
+      discountValue: String(promotion.discountValue || '10'),
+      minOrder: String(promotion.minOrder || '0'),
     });
   };
 

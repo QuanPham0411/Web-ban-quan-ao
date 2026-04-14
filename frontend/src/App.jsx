@@ -33,6 +33,7 @@ const resolveApiBaseUrl = () => {
 };
 
 const API_BASE_URL = resolveApiBaseUrl();
+const PRODUCTS_API_URL = `${API_BASE_URL}/api/products`;
 
 const AUTH_STORAGE_KEY = 'sunnywear-auth';
 const LAST_VISIT_STORAGE_KEY = 'sunnywear-last-visit';
@@ -104,6 +105,27 @@ const initialProducts = catalogProducts.map((p) => {
     quantity: defaultQuantity(p.stockLabel),
   };
 });
+
+const mapProductFromApi = (product) => {
+  const priceNumber = Number(product?.price || 0);
+  const stockLabel = String(product?.stock_label || 'Còn hàng').trim() || 'Còn hàng';
+  const image = String(product?.image_url || product?.image || product?.imageUrl || '').trim();
+
+  return {
+    id: String(product?.id || ''),
+    categoryKey: String(product?.category_key || 'women'),
+    categoryLabel: String(product?.category_label || 'Nữ'),
+    name: String(product?.name || ''),
+    price: String(product?.price_formatted || `${priceNumber.toLocaleString('vi-VN')}đ`),
+    priceNumber,
+    priceText: String(product?.price_formatted || `${priceNumber.toLocaleString('vi-VN')}đ`),
+    description: String(product?.description || ''),
+    image,
+    size: String(product?.size_label || ''),
+    stockLabel,
+    quantity: Number(product?.quantity ?? defaultQuantity(stockLabel)),
+  };
+};
 
 const seedCustomerEmails = new Set([
   'nguyenvana@email.com',
@@ -383,6 +405,48 @@ function App() {
   useEffect(() => {
     localStorage.setItem(VOUCHERS_STORAGE_KEY, JSON.stringify(sharedVouchers));
   }, [sharedVouchers]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadProductsFromApi = async () => {
+      try {
+        const response = await fetch(`${PRODUCTS_API_URL}?page=1&limit=100`);
+        if (!response.ok) {
+          return;
+        }
+
+        const data = await parseApiResponse(response);
+        const total = Number(data.total || 0);
+        const firstPage = Array.isArray(data.products) ? data.products.map(mapProductFromApi) : [];
+        const totalPages = Math.max(1, Math.ceil(total / 100));
+        const productPages = [...firstPage];
+
+        for (let page = 2; page <= totalPages; page += 1) {
+          const pageResponse = await fetch(`${PRODUCTS_API_URL}?page=${page}&limit=100`);
+          if (!pageResponse.ok) {
+            break;
+          }
+
+          const pageData = await parseApiResponse(pageResponse);
+          const pageProducts = Array.isArray(pageData.products) ? pageData.products.map(mapProductFromApi) : [];
+          productPages.push(...pageProducts);
+        }
+
+        if (!cancelled && productPages.length > 0) {
+          setSharedProducts(productPages);
+        }
+      } catch {
+        // Keep catalog fallback when API is unavailable.
+      }
+    };
+
+    loadProductsFromApi();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     const handleHashChange = () => {
