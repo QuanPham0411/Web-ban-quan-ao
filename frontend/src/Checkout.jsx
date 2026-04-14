@@ -165,7 +165,15 @@ const evaluatePromotion = (promotion, subtotal, totalItems, cartItems) => {
   const structuredDiscount = Number.isFinite(discountValue) && discountValue > 0
     ? (discountType === 'fixed' ? discountValue : Math.floor((subtotal * discountValue) / 100))
     : 0;
-  const discount = structuredDiscount > 0 ? structuredDiscount : parseDiscountAmount(discountText, subtotal);
+  const explicitDiscountPattern = /(giảm|giam|sale|discount|voucher|mã|ma|%|\bđ\b|\bvnd\b|\bk\b)/i;
+  const shippingOnlyPattern = /(freeship|free ship|miễn phí vận chuyển|mien phi van chuyen|free delivery)/i;
+  const discount = structuredDiscount > 0
+    ? structuredDiscount
+    : shippingOnlyPattern.test(discountText)
+      ? 0
+      : explicitDiscountPattern.test(discountText)
+        ? parseDiscountAmount(discountText, subtotal)
+        : 0;
 
   const minOrder = Number(promotion.minOrder || 0);
   if (Number.isFinite(minOrder) && minOrder > 0 && subtotal < minOrder) {

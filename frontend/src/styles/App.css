@@ -573,8 +573,13 @@
 }
 
 .catalog-stat-card span {
+    display: block;
+    width: 100%;
+    text-align: center;
     margin-top: 6px;
     font-weight: 700;
+    line-height: 1.35;
+    min-height: 2.7em;
     color: #475569;
 }
 
@@ -3078,6 +3083,58 @@
     outline: none;
     border-color: #f97316;
     box-shadow: 0 0 0 2px rgba(249, 115, 22, 0.15);
+}
+
+.admin-image-upload-field {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.admin-image-upload-label {
+    font-size: 0.78rem;
+    font-weight: 700;
+    color: #475569;
+    letter-spacing: 0.01em;
+}
+
+.admin-image-upload-note {
+    margin: 0;
+    font-size: 0.74rem;
+    line-height: 1.35;
+    color: #64748b;
+}
+
+.admin-image-upload-preview {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    align-items: flex-start;
+    min-height: 92px;
+    padding: 8px;
+    border-radius: 12px;
+    background: #f8fafc;
+    border: 1px dashed #cbd5e1;
+}
+
+.admin-image-upload-preview span {
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: #64748b;
+}
+
+.admin-image-upload-empty {
+    justify-content: center;
+    align-items: center;
+}
+
+.admin-product-img-preview {
+    width: 100%;
+    max-width: 140px;
+    height: 140px;
+    object-fit: cover;
+    border-radius: 10px;
+    background: #e2e8f0;
 }
 
 .admin-product-description-input {

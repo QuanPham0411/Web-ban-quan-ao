@@ -1,6 +1,11 @@
 import CartIconButton from './components/CartIconButton';
 
 const formatPrice = (value) => `${value.toLocaleString('vi-VN')}đ`;
+const fallbackImage =
+  'data:image/svg+xml;utf8,' +
+  encodeURIComponent(
+    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 600 750"><rect width="600" height="750" fill="#f4efe7"/><text x="50%" y="48%" dominant-baseline="middle" text-anchor="middle" fill="#7a6658" font-family="Arial,sans-serif" font-size="28">SunnyWear</text><text x="50%" y="56%" dominant-baseline="middle" text-anchor="middle" fill="#a08f80" font-family="Arial,sans-serif" font-size="16">Không có ảnh</text></svg>',
+  );
 
 function Cart({
   authState,
@@ -95,7 +100,15 @@ function Cart({
           <div className="cart-list">
             {cartItems.map((item) => (
               <article key={item.id} className="cart-item-card">
-                <img className="cart-item-image" src={item.image} alt={item.name} />
+                <img
+                  className="cart-item-image"
+                  src={item.image || fallbackImage}
+                  alt={item.name}
+                  onError={(e) => {
+                    e.currentTarget.onerror = null;
+                    e.currentTarget.src = fallbackImage;
+                  }}
+                />
 
                 <div className="cart-item-info">
                   <h3>{item.name}</h3>

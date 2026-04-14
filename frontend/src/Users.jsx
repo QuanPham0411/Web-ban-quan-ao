@@ -82,7 +82,8 @@ function Users({
       }
 
       const data = await response.json();
-      setUsers(Array.isArray(data) ? data : []);
+      const normalizedUsers = Array.isArray(data) ? data : Array.isArray(data?.users) ? data.users : [];
+      setUsers(normalizedUsers);
     } catch (err) {
       setUsers([]);
       setError(`Không thể tải dữ liệu users (${err.message}).`);

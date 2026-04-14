@@ -38,6 +38,9 @@ function Products({
     products.filter((product) => categoryFilterMap[activeCategory]?.includes(product.categoryKey)),
     searchQuery,
   );
+  const totalProducts = products.length;
+  const totalCategoryGroups = categoryConfigs.length;
+  const hotProducts = products.filter((product) => String(product.stockLabel || '').trim() === 'Bán chạy').length;
 
   return (
     <div className="catalog-page">
@@ -93,22 +96,22 @@ function Products({
           <span className="hero-badge">Danh mục shop</span>
           <h1>Bộ sưu tập SunnyWear</h1>
           <p>
-            Hàng trăm mẫu thời trang mới nhất được cập nhật mỗi ngày.
+            Danh mục sản phẩm được đồng bộ trực tiếp từ hệ thống quản trị.
             Lọc nhanh theo sở thích và phong cách của bạn ngay bên dưới.
           </p>
         </div>
         <div className="catalog-hero-stats">
           <div className="catalog-stat-card">
-            <strong>200+</strong>
+            <strong>{totalProducts}</strong>
             <span>Sản phẩm</span>
           </div>
           <div className="catalog-stat-card">
-            <strong>4</strong>
+            <strong>{totalCategoryGroups}</strong>
             <span>Nhóm hàng</span>
           </div>
           <div className="catalog-stat-card">
-            <strong>Hot</strong>
-            <span>Trending 2026</span>
+            <strong>{hotProducts}</strong>
+            <span>Sản phẩm bán chạy</span>
           </div>
         </div>
       </section>

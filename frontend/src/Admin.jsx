@@ -22,6 +22,8 @@ const resolveApiBaseUrl = () => {
 const API_BASE_URL = resolveApiBaseUrl();
 const PRODUCTS_API_URL = `${API_BASE_URL}/api/products`;
 const USERS_API_URL = `${API_BASE_URL}/api/users`;
+const OFFERS_API_URL = `${API_BASE_URL}/api/offers`;
+const VOUCHERS_API_URL = `${API_BASE_URL}/api/offers/vouchers`;
 
 const getAdminToken = () => {
   try {
@@ -117,6 +119,20 @@ const parsePriceInput = (value) => {
 
 const parseAmount = (amount) => Number(String(amount || '').replace(/\D/g, ''));
 
+const parseVoucherDraftDiscount = (value) => {
+  const raw = String(value || '').toLowerCase();
+  const digits = parseAmount(raw);
+  if (raw.includes('%')) {
+    return { discountType: 'percent', discountValue: Math.max(1, digits || 0) };
+  }
+  return { discountType: 'fixed', discountValue: Math.max(1, digits || 0) };
+};
+
+const parseVoucherDraftRule = (value) => {
+  const digits = parseAmount(value);
+  return Math.max(0, digits || 0);
+};
+
 const parseExpiryDate = (value) => {
   const raw = String(value || '').trim();
 
@@ -164,6 +180,14 @@ const parseApiResponse = async (response) => {
   }
 };
 
+const readFileAsDataUrl = (file) =>
+  new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result || ''));
+    reader.onerror = () => reject(new Error('Không đọc được file ảnh.'));
+    reader.readAsDataURL(file);
+  });
+
 const formatJoinedDate = (value) => {
   if (!value) {
     return formatDateToDmy(new Date());
@@ -186,6 +210,39 @@ const mapCustomerFromApi = (user) => ({
   joined: formatJoinedDate(user.createdAt || user.created_at),
   role: user.role || 'customer',
 });
+
+const mapPromotionFromApi = (offer) => ({
+  id: offer.id,
+  badge: offer.badge || '',
+  title: offer.title || '',
+  expiresAt: offer.expiryDate || '',
+  expire: offer.expiryDate ? formatExpireLabel(offer.expiryDate) : '',
+  description: offer.description || '',
+  discountType: offer.discountType || 'percent',
+  discountValue: Number(offer.discountValue || 0),
+  minOrder: Number(offer.minOrder || 0),
+});
+
+const mapVoucherFromApi = (voucher) => {
+  const discountType = String(voucher.discountType || 'percent');
+  const discountValue = Number(voucher.discountValue || 0);
+  const discountLabel = discountType === 'percent' ? `Giảm ${discountValue}%` : `Giảm ${formatVnd(discountValue)}đ`;
+  const minOrder = Number(voucher.minOrder || 0);
+  const ruleLabel = minOrder > 0 ? `Đơn từ ${formatVnd(minOrder)}đ` : 'Không yêu cầu giá trị đơn tối thiểu';
+
+  return {
+    id: voucher.id,
+    code: voucher.code || '',
+    discount: discountLabel,
+    rule: ruleLabel,
+    expiresAt: voucher.expiryDate || '',
+    expire: voucher.expiryDate ? formatExpireLabel(voucher.expiryDate) : '',
+    discountType,
+    discountValue,
+    minOrder,
+    categoryKey: voucher.categoryKey || 'all',
+  };
+};
 
 const formatExpireLabel = (value) => {
   const date = parseExpiryDate(value);
@@ -393,6 +450,22 @@ function ProductsTab({
   const [searchQuery, setSearchQuery] = useState('');
   const visibleProducts = filterProductsBySearch(products, searchQuery);
 
+  const handleImageFileChange = async (event) => {
+    const file = event.target.files?.[0];
+    if (!file) {
+      return;
+    }
+
+    try {
+      const imageDataUrl = await readFileAsDataUrl(file);
+      onDraftChange('image', imageDataUrl);
+    } catch (err) {
+      window.alert(err.message || 'Không thể tải ảnh lên.');
+    } finally {
+      event.target.value = '';
+    }
+  };
+
   return (
     <div>
       <div className="admin-tab-topbar">
@@ -466,12 +539,21 @@ function ProductsTab({
           value={draft.quantity}
           onChange={(e) => onDraftChange('quantity', e.target.value)}
         />
-        <input
-          type="text"
-          placeholder="URL hình ảnh"
-          value={draft.image}
-          onChange={(e) => onDraftChange('image', e.target.value)}
-        />
+        <div className="admin-image-upload-field">
+          <span className="admin-image-upload-label">Ảnh từ máy tính</span>
+          <input type="file" accept="image/*" onChange={handleImageFileChange} />
+          <p className="admin-image-upload-note">Chọn file ảnh để lưu trực tiếp cùng sản phẩm. Nếu sửa mà không chọn file mới, ảnh hiện tại sẽ được giữ nguyên.</p>
+          {draft.image ? (
+            <div className="admin-image-upload-preview">
+              <img src={draft.image} alt={draft.name || 'Ảnh sản phẩm'} className="admin-product-img-preview" />
+              <span>{draft.image.startsWith('data:') ? 'Ảnh đã tải lên' : 'Ảnh hiện tại'}</span>
+            </div>
+          ) : (
+            <div className="admin-image-upload-preview admin-image-upload-empty">
+              <span>Chưa có ảnh</span>
+            </div>
+          )}
+        </div>
         <button type="submit" className="admin-action-btn admin-action-save">
           {editingId ? 'Lưu sửa' : 'Thêm mới'}
         </button>
@@ -569,7 +651,7 @@ function OrdersTab({ orders, onUpdateOrderStatus, onDeleteOrder }) {
       return;
     }
 
-    onDeleteOrder(order.id);
+    onDeleteOrder(order.backendId || order.id);
   };
 
   return (
@@ -611,7 +693,7 @@ function OrdersTab({ orders, onUpdateOrderStatus, onDeleteOrder }) {
                         type="button"
                         className={`admin-order-action-btn ${action.className}`}
                         disabled={isActionDisabled(action.key, order.status)}
-                        onClick={() => onUpdateOrderStatus(order.id, action.nextStatus)}
+                        onClick={() => onUpdateOrderStatus(order.backendId || order.id, action.nextStatus)}
                       >
                         {action.label}
                       </button>
@@ -886,6 +968,7 @@ function Admin({
   orders,
   onSetOrders,
   onDeleteOrder,
+  onUpdateOrderStatus,
   promotions,
   onSetPromotions,
   vouchers,
@@ -935,11 +1018,11 @@ function Admin({
         throw new Error(data.message || `HTTP ${response.status}`);
       }
 
-      const normalizedCustomers = Array.isArray(data)
-        ? data
+      const userRows = Array.isArray(data) ? data : Array.isArray(data?.users) ? data.users : [];
+
+      const normalizedCustomers = userRows
             .map(mapCustomerFromApi)
-            .filter((item) => item.role !== 'admin' && item.role !== 'staff')
-        : [];
+        .filter((item) => item.role !== 'admin' && item.role !== 'staff');
 
       onSetCustomers(normalizedCustomers);
     } catch (err) {
@@ -947,11 +1030,49 @@ function Admin({
     }
   }, [onSetCustomers]);
 
+  const fetchOffersFromApi = useCallback(async () => {
+    try {
+      const [offersResponse, vouchersResponse] = await Promise.all([
+        fetch(`${OFFERS_API_URL}?includeInactive=true&page=1&limit=200`, {
+          headers: {
+            ...buildAdminAuthHeaders(),
+          },
+        }),
+        fetch(`${VOUCHERS_API_URL}?includeInactive=true&page=1&limit=200`, {
+          headers: {
+            ...buildAdminAuthHeaders(),
+          },
+        }),
+      ]);
+
+      const offersData = await parseApiResponse(offersResponse);
+      const vouchersData = await parseApiResponse(vouchersResponse);
+
+      if (offersResponse.ok) {
+        const offerRows = Array.isArray(offersData?.offers) ? offersData.offers : [];
+        onSetPromotions(offerRows.map(mapPromotionFromApi));
+      }
+
+      if (vouchersResponse.ok) {
+        const voucherRows = Array.isArray(vouchersData?.vouchers) ? vouchersData.vouchers : [];
+        onSetVouchers(voucherRows.map(mapVoucherFromApi));
+      }
+    } catch (err) {
+      console.error('Không thể đồng bộ ưu đãi/voucher từ API:', err.message);
+    }
+  }, [onSetPromotions, onSetVouchers]);
+
   useEffect(() => {
     if (activeTab === 'customers') {
       fetchCustomersFromApi();
     }
   }, [activeTab, fetchCustomersFromApi]);
+
+  useEffect(() => {
+    if (activeTab === 'offers') {
+      fetchOffersFromApi();
+    }
+  }, [activeTab, fetchOffersFromApi]);
 
   const resetDraft = () => {
     setEditingId(null);
@@ -1133,8 +1254,13 @@ function Admin({
     }
   };
 
-  const handleUpdateOrderStatus = (orderId, nextStatus) => {
-    const order = orders.find((item) => item.id === orderId);
+  const handleUpdateOrderStatus = async (orderId, nextStatus) => {
+    if (typeof onUpdateOrderStatus === 'function') {
+      await onUpdateOrderStatus(orderId, nextStatus);
+      return;
+    }
+
+    const order = orders.find((item) => item.id === orderId || item.backendId === orderId);
     const shouldDeductInventory =
       Boolean(order) &&
       !order.inventoryDeducted &&
@@ -1176,7 +1302,7 @@ function Admin({
 
     onSetOrders((prev) =>
       prev.map((order) =>
-        order.id === orderId
+        order.id === orderId || order.backendId === orderId
           ? {
               ...order,
               status: nextStatus,
@@ -1187,7 +1313,7 @@ function Admin({
     );
   };
 
-  const handleSubmitPromotion = (e) => {
+  const handleSubmitPromotion = async (e) => {
     e.preventDefault();
 
     const discountValue = Number(promotionDraft.discountValue);
@@ -1207,26 +1333,43 @@ function Admin({
       return;
     }
 
-    const nextPromotion = {
-      id: editingPromotionId || `PRM-${Date.now()}`,
+    const requestBody = {
       badge: promotionDraft.badge.trim(),
       title: promotionDraft.title.trim(),
-      expiresAt: promotionDraft.expiresAt,
-      expire: formatExpireLabel(promotionDraft.expiresAt),
       description: promotionDraft.description.trim(),
       discountType: promotionDraft.discountType,
       discountValue,
       minOrder,
+      expiryDate: promotionDraft.expiresAt,
     };
 
-    if (editingPromotionId) {
-      onSetPromotions((prev) => prev.map((item) => (item.id === editingPromotionId ? nextPromotion : item)));
-      resetPromotionDraft();
-      return;
-    }
+    try {
+      const response = await fetch(editingPromotionId ? `${OFFERS_API_URL}/${editingPromotionId}` : OFFERS_API_URL, {
+        method: editingPromotionId ? 'PUT' : 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...buildAdminAuthHeaders(),
+        },
+        body: JSON.stringify(requestBody),
+      });
 
-    onSetPromotions((prev) => [nextPromotion, ...prev]);
-    resetPromotionDraft();
+      const data = await parseApiResponse(response);
+      if (!response.ok) {
+        throw new Error(data.message || `HTTP ${response.status}`);
+      }
+
+      const savedPromotion = mapPromotionFromApi(data.offer || requestBody);
+
+      if (editingPromotionId) {
+        onSetPromotions((prev) => prev.map((item) => (item.id === editingPromotionId ? savedPromotion : item)));
+      } else {
+        onSetPromotions((prev) => [savedPromotion, ...prev]);
+      }
+
+      resetPromotionDraft();
+    } catch (err) {
+      window.alert(`Không thể lưu chương trình khuyến mãi: ${err.message}`);
+    }
   };
 
   const handleEditPromotion = (promotion) => {
@@ -1242,7 +1385,7 @@ function Admin({
     });
   };
 
-  const handleDeletePromotion = (promotion) => {
+  const handleDeletePromotion = async (promotion) => {
     const target = typeof promotion === 'object' ? promotion : promotions.find((item) => item.id === promotion);
     const promotionId = target?.id || promotion;
     const expired = isExpiredByDateValue(target?.expiresAt || target?.expire);
@@ -1254,36 +1397,73 @@ function Admin({
       return;
     }
 
-    onSetPromotions((prev) => prev.filter((item) => item.id !== promotionId));
-    if (editingPromotionId === promotionId) {
-      resetPromotionDraft();
+    try {
+      const response = await fetch(`${OFFERS_API_URL}/${promotionId}`, {
+        method: 'DELETE',
+        headers: {
+          ...buildAdminAuthHeaders(),
+        },
+      });
+      const data = await parseApiResponse(response);
+
+      if (!response.ok) {
+        throw new Error(data.message || `HTTP ${response.status}`);
+      }
+
+      onSetPromotions((prev) => prev.filter((item) => item.id !== promotionId));
+      if (editingPromotionId === promotionId) {
+        resetPromotionDraft();
+      }
+    } catch (err) {
+      window.alert(`Không thể xóa chương trình: ${err.message}`);
     }
   };
 
-  const handleSubmitVoucher = (e) => {
+  const handleSubmitVoucher = async (e) => {
     e.preventDefault();
 
     if (!voucherDraft.code.trim() || !voucherDraft.discount.trim() || !voucherDraft.rule.trim() || !voucherDraft.expiresAt) {
       return;
     }
 
-    const nextVoucher = {
-      id: editingVoucherId || `VCR-${Date.now()}`,
+    const parsedDiscount = parseVoucherDraftDiscount(voucherDraft.discount);
+    const minOrder = parseVoucherDraftRule(voucherDraft.rule);
+    const requestBody = {
       code: voucherDraft.code.trim().toUpperCase(),
-      discount: voucherDraft.discount.trim(),
-      rule: voucherDraft.rule.trim(),
-      expiresAt: voucherDraft.expiresAt,
-      expire: formatExpireLabel(voucherDraft.expiresAt),
+      discountType: parsedDiscount.discountType,
+      discountValue: parsedDiscount.discountValue,
+      minOrder,
+      categoryKey: 'all',
+      expiryDate: voucherDraft.expiresAt,
     };
 
-    if (editingVoucherId) {
-      onSetVouchers((prev) => prev.map((item) => (item.id === editingVoucherId ? nextVoucher : item)));
-      resetVoucherDraft();
-      return;
-    }
+    try {
+      const response = await fetch(editingVoucherId ? `${VOUCHERS_API_URL}/${editingVoucherId}` : VOUCHERS_API_URL, {
+        method: editingVoucherId ? 'PUT' : 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...buildAdminAuthHeaders(),
+        },
+        body: JSON.stringify(requestBody),
+      });
 
-    onSetVouchers((prev) => [nextVoucher, ...prev]);
-    resetVoucherDraft();
+      const data = await parseApiResponse(response);
+      if (!response.ok) {
+        throw new Error(data.message || `HTTP ${response.status}`);
+      }
+
+      const savedVoucher = mapVoucherFromApi(data.voucher || requestBody);
+
+      if (editingVoucherId) {
+        onSetVouchers((prev) => prev.map((item) => (item.id === editingVoucherId ? savedVoucher : item)));
+      } else {
+        onSetVouchers((prev) => [savedVoucher, ...prev]);
+      }
+
+      resetVoucherDraft();
+    } catch (err) {
+      window.alert(`Không thể lưu voucher: ${err.message}`);
+    }
   };
 
   const handleEditVoucher = (voucher) => {
@@ -1296,7 +1476,7 @@ function Admin({
     });
   };
 
-  const handleDeleteVoucher = (voucher) => {
+  const handleDeleteVoucher = async (voucher) => {
     const target = typeof voucher === 'object' ? voucher : vouchers.find((item) => item.id === voucher);
     const voucherId = target?.id || voucher;
     const expired = isExpiredByDateValue(target?.expiresAt || target?.expire);
@@ -1308,9 +1488,25 @@ function Admin({
       return;
     }
 
-    onSetVouchers((prev) => prev.filter((item) => item.id !== voucherId));
-    if (editingVoucherId === voucherId) {
-      resetVoucherDraft();
+    try {
+      const response = await fetch(`${VOUCHERS_API_URL}/${voucherId}`, {
+        method: 'DELETE',
+        headers: {
+          ...buildAdminAuthHeaders(),
+        },
+      });
+      const data = await parseApiResponse(response);
+
+      if (!response.ok) {
+        throw new Error(data.message || `HTTP ${response.status}`);
+      }
+
+      onSetVouchers((prev) => prev.filter((item) => item.id !== voucherId));
+      if (editingVoucherId === voucherId) {
+        resetVoucherDraft();
+      }
+    } catch (err) {
+      window.alert(`Không thể xóa voucher: ${err.message}`);
     }
   };
 
