@@ -34,6 +34,10 @@ const resolveApiBaseUrl = () => {
 
 const API_BASE_URL = resolveApiBaseUrl();
 const PRODUCTS_API_URL = `${API_BASE_URL}/api/products`;
+const CART_API_URL = `${API_BASE_URL}/api/cart`;
+const ORDERS_API_URL = `${API_BASE_URL}/api/orders`;
+const OFFERS_API_URL = `${API_BASE_URL}/api/offers`;
+const VOUCHERS_API_URL = `${API_BASE_URL}/api/offers/vouchers`;
 
 const AUTH_STORAGE_KEY = 'sunnywear-auth';
 const LAST_VISIT_STORAGE_KEY = 'sunnywear-last-visit';
@@ -50,6 +54,26 @@ const ADMIN_EMAIL = 'admin@sunnywear.com';
 const ADMIN_PASSWORD = 'Admin@123';
 const normalizeEmail = (email) => String(email || '').trim().toLowerCase();
 
+const normalizeSearchValue = (value) =>
+  String(value || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/đ/gi, 'd')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim();
+
+const catalogImageLookup = new Map();
+catalogProducts.forEach((product) => {
+  const image = String(product?.image || '').trim();
+  if (!image) {
+    return;
+  }
+
+  catalogImageLookup.set(String(product.id || '').trim(), image);
+  catalogImageLookup.set(normalizeSearchValue(product.name), image);
+});
+
 const parseApiResponse = async (response) => {
   const rawText = await response.text();
   if (!rawText) {
@@ -60,6 +84,24 @@ const parseApiResponse = async (response) => {
     return JSON.parse(rawText);
   } catch {
     return { message: rawText };
+  }
+};
+
+const getCustomerToken = () => {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(AUTH_STORAGE_KEY) || '{}');
+    return parsed?.token ? String(parsed.token) : '';
+  } catch {
+    return '';
+  }
+};
+
+const getAdminToken = () => {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(ADMIN_AUTH_STORAGE_KEY) || '{}');
+    return parsed?.token ? String(parsed.token) : '';
+  } catch {
+    return '';
   }
 };
 
@@ -109,7 +151,9 @@ const initialProducts = catalogProducts.map((p) => {
 const mapProductFromApi = (product) => {
   const priceNumber = Number(product?.price || 0);
   const stockLabel = String(product?.stock_label || 'Còn hàng').trim() || 'Còn hàng';
-  const image = String(product?.image_url || product?.image || product?.imageUrl || '').trim();
+  const apiImage = String(product?.image_url || product?.image || product?.imageUrl || '').trim();
+  const catalogImage = catalogImageLookup.get(String(product?.id || '').trim()) || catalogImageLookup.get(normalizeSearchValue(product?.name));
+  const image = apiImage || catalogImage || '';
 
   return {
     id: String(product?.id || ''),
@@ -142,6 +186,82 @@ const seedOrderIds = new Set(['ORD-001', 'ORD-002', 'ORD-003', 'ORD-004', 'ORD-0
 
 const formatDate = (date) =>
   `${String(date.getDate()).padStart(2, '0')}/${String(date.getMonth() + 1).padStart(2, '0')}/${date.getFullYear()}`;
+
+const formatDateTime = (value) => {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return formatDate(new Date());
+  }
+  return formatDate(date);
+};
+
+const mapOrderFromApi = (order, fallbackCustomerEmail = '') => {
+  const items = Array.isArray(order?.items)
+    ? order.items.map((item) => ({
+        id: String(item?.productId || item?.product_id || ''),
+        name: String(item?.productName || item?.product_name || ''),
+        quantity: Number(item?.quantity || 0),
+        priceNumber: Number(item?.unitPrice || item?.unit_price || 0),
+        priceText: `${Number(item?.unitPrice || item?.unit_price || 0).toLocaleString('vi-VN')}đ`,
+      }))
+    : [];
+
+  const displayId = String(order?.orderCode || order?.order_code || `ORD-${order?.id || ''}`);
+  const createdAtSource = order?.placedAt || order?.placed_at || order?.updatedAt || order?.updated_at || Date.now();
+  const totalAmount = Number(order?.totalAmount || order?.total_amount || 0);
+
+  return {
+    id: displayId,
+    backendId: Number(order?.id || 0),
+    customer: String(order?.customerName || order?.customer_name || ''),
+    customerEmail: String(fallbackCustomerEmail || ''),
+    fullName: String(order?.customerName || order?.customer_name || ''),
+    phone: String(order?.customerPhone || order?.customer_phone || ''),
+    address: String(order?.customerAddress || order?.customer_address || ''),
+    paymentMethod: String(order?.paymentMethod || order?.payment_method || 'cod'),
+    note: String(order?.note || ''),
+    items,
+    product:
+      items.length === 0
+        ? 'Không có sản phẩm'
+        : items.length === 1
+        ? items[0].name
+        : `${items[0].name} (+${items.length - 1} sản phẩm)`,
+    amount: `${totalAmount.toLocaleString('vi-VN')}đ`,
+    status: String(order?.status || 'Chờ xác nhận'),
+    date: formatDateTime(createdAtSource),
+    voucherCode: String(order?.voucherCode || order?.voucher_code || ''),
+    promotionTitle: String(order?.promotionTitle || order?.promotion_title || ''),
+    createdAt: new Date(createdAtSource).getTime() || Date.now(),
+  };
+};
+
+const mapPromotionFromApi = (offer) => ({
+  id: offer.id,
+  badge: offer.badge || '',
+  title: offer.title || '',
+  expiresAt: offer.expiryDate || '',
+  expire: offer.expiryDate || '',
+  description: offer.description || '',
+  discountType: offer.discountType || 'percent',
+  discountValue: Number(offer.discountValue || 0),
+  minOrder: Number(offer.minOrder || 0),
+});
+
+const mapVoucherFromApi = (voucher) => {
+  const discountType = String(voucher.discountType || 'percent');
+  const discountValue = Number(voucher.discountValue || 0);
+  const minOrder = Number(voucher.minOrder || 0);
+
+  return {
+    id: voucher.id,
+    code: voucher.code || '',
+    discount: discountType === 'percent' ? `Giảm ${discountValue}%` : `Giảm ${discountValue.toLocaleString('vi-VN')}đ`,
+    rule: minOrder > 0 ? `Đơn từ ${minOrder.toLocaleString('vi-VN')}đ` : 'Không yêu cầu giá trị đơn tối thiểu',
+    expiresAt: voucher.expiryDate || '',
+    expire: voucher.expiryDate || '',
+  };
+};
 
 const getCurrentPage = () => {
   if (window.location.hash.startsWith('#products/')) {
@@ -449,6 +569,128 @@ function App() {
   }, []);
 
   useEffect(() => {
+    let cancelled = false;
+
+    const loadOffersAndVouchers = async () => {
+      try {
+        const [offersResponse, vouchersResponse] = await Promise.all([
+          fetch(`${OFFERS_API_URL}?page=1&limit=200`),
+          fetch(`${VOUCHERS_API_URL}?page=1&limit=200`),
+        ]);
+
+        const offersData = await parseApiResponse(offersResponse);
+        const vouchersData = await parseApiResponse(vouchersResponse);
+
+        if (!cancelled && offersResponse.ok) {
+          const rows = Array.isArray(offersData?.offers) ? offersData.offers : [];
+          setSharedPromotions(rows.map(mapPromotionFromApi));
+        }
+
+        if (!cancelled && vouchersResponse.ok) {
+          const rows = Array.isArray(vouchersData?.vouchers) ? vouchersData.vouchers : [];
+          setSharedVouchers(rows.map(mapVoucherFromApi));
+        }
+      } catch {
+        // Keep local fallback when API is unavailable.
+      }
+    };
+
+    loadOffersAndVouchers();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadCustomerOrders = async () => {
+      if (!authState.isLoggedIn) {
+        return;
+      }
+
+      const token = getCustomerToken();
+      if (!token) {
+        return;
+      }
+
+      try {
+        const response = await fetch(`${ORDERS_API_URL}/my`, {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        });
+
+        const data = await parseApiResponse(response);
+        if (!response.ok) {
+          return;
+        }
+
+        const mappedOrders = Array.isArray(data.orders)
+          ? data.orders.map((order) => mapOrderFromApi(order, authState.email))
+          : [];
+
+        if (!cancelled) {
+          setSharedOrders(mappedOrders);
+        }
+      } catch {
+        // Keep existing local data if backend temporarily unavailable.
+      }
+    };
+
+    loadCustomerOrders();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [authState.isLoggedIn, authState.email]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadAdminOrders = async () => {
+      if (!adminAuth.isAdmin) {
+        return;
+      }
+
+      const token = getAdminToken();
+      if (!token) {
+        return;
+      }
+
+      try {
+        const response = await fetch(`${ORDERS_API_URL}?page=1&limit=100`, {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        });
+
+        const data = await parseApiResponse(response);
+        if (!response.ok) {
+          return;
+        }
+
+        const mappedOrders = Array.isArray(data.orders)
+          ? data.orders.map((order) => mapOrderFromApi(order))
+          : [];
+
+        if (!cancelled) {
+          setSharedOrders(mappedOrders);
+        }
+      } catch {
+        // Keep existing local data if backend temporarily unavailable.
+      }
+    };
+
+    loadAdminOrders();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [adminAuth.isAdmin]);
+
+  useEffect(() => {
     const handleHashChange = () => {
       setPage(getCurrentPage());
     };
@@ -621,78 +863,197 @@ function App() {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
-  const handlePlaceOrder = (checkoutData) => {
+  const syncCartToBackend = async (token) => {
+    await fetch(CART_API_URL, {
+      method: 'DELETE',
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    });
+
+    for (const item of cartItems) {
+      const response = await fetch(CART_API_URL, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          productId: item.id,
+          productName: item.name,
+          priceFormatted: item.priceText || `${Number(item.priceNumber || 0).toLocaleString('vi-VN')}đ`,
+          imageUrl: item.image || '',
+          quantity: Number(item.quantity || 1),
+        }),
+      });
+
+      const data = await parseApiResponse(response);
+      if (!response.ok) {
+        throw new Error(data.message || `Không thể đồng bộ giỏ hàng (HTTP ${response.status}).`);
+      }
+    }
+  };
+
+  const handlePlaceOrder = async (checkoutData) => {
     if (!authState.isLoggedIn || cartItems.length === 0) {
       return;
     }
 
-    const totalPrice = cartItems.reduce((total, item) => total + item.priceNumber * item.quantity, 0);
-    const discountAmount = Math.min(Number(checkoutData?.discountAmount || 0), totalPrice);
-    const finalTotal = Math.max(0, Number(checkoutData?.finalTotal || totalPrice - discountAmount));
-    const orderId = `ORD-${Date.now().toString().slice(-6)}`;
-    const orderItems = cartItems.map((item) => ({
-      id: item.id,
-      name: item.name,
-      quantity: Number(item.quantity || 0),
-      priceNumber: Number(item.priceNumber || 0),
-      priceText: item.priceText || `${Number(item.priceNumber || 0).toLocaleString('vi-VN')}đ`,
-    }));
-    const productLabel =
-      cartItems.length === 1
-        ? cartItems[0].name
-        : `${cartItems[0].name} (+${cartItems.length - 1} sản phẩm)`;
+    const token = getCustomerToken();
+    if (!token) {
+      window.alert('Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.');
+      return;
+    }
 
-    const order = {
-      id: orderId,
-      customer: authState.accountLabel,
-      customerEmail: normalizeEmail(authState.email),
-      fullName: checkoutData?.fullName || authState.accountLabel,
-      phone: checkoutData?.phone || '',
-      address: checkoutData?.address || '',
-      paymentMethod: checkoutData?.paymentMethod || 'cod',
-      note: checkoutData?.note || '',
-      items: orderItems,
-      product: productLabel,
-      amount: `${finalTotal.toLocaleString('vi-VN')}đ`,
-      status: checkoutData?.status || 'Chờ xác nhận',
-      date: formatDate(new Date()),
-      voucherCode: checkoutData?.voucherCode || '',
-      promotionTitle: checkoutData?.promotionTitle || '',
-      createdAt: Date.now(),
-    };
+    try {
+      await syncCartToBackend(token);
 
-    setSharedOrders((prev) => [order, ...prev]);
-    setLatestOrderId(orderId);
-    setCartItems([]);
+      const response = await fetch(ORDERS_API_URL, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          fullName: checkoutData?.fullName || authState.accountLabel,
+          phone: checkoutData?.phone || '',
+          address: checkoutData?.address || '',
+          paymentMethod: checkoutData?.paymentMethod || 'cod',
+          note: checkoutData?.note || '',
+          voucherCode: checkoutData?.voucherCode || '',
+          promotionTitle: checkoutData?.promotionTitle || '',
+          discountAmount: Number(checkoutData?.discountAmount || 0),
+        }),
+      });
 
-    if (authState.email) {
-      const normalized = normalizeEmail(authState.email);
-      setSharedCustomers((prev) =>
-        prev.map((customer) =>
-          normalizeEmail(customer.email) === normalized
-            ? { ...customer, orders: Number(customer.orders || 0) + 1 }
-            : customer,
-        ),
-      );
+      const data = await parseApiResponse(response);
+      if (!response.ok) {
+        throw new Error(data.message || `HTTP ${response.status}`);
+      }
+
+      const createdOrder = mapOrderFromApi(data.order, authState.email);
+      setSharedOrders((prev) => [createdOrder, ...prev]);
+      setLatestOrderId(createdOrder.id);
+      setCartItems([]);
+
+      if (authState.email) {
+        const normalized = normalizeEmail(authState.email);
+        setSharedCustomers((prev) =>
+          prev.map((customer) =>
+            normalizeEmail(customer.email) === normalized
+              ? { ...customer, orders: Number(customer.orders || 0) + 1 }
+              : customer,
+          ),
+        );
+      }
+    } catch (err) {
+      window.alert(`Không thể đặt hàng: ${err.message}`);
     }
   };
 
-  const handleCustomerCancelOrder = (orderId) => {
-    setSharedOrders((previous) =>
-      previous.map((order) =>
-        order.id === orderId
-          ? {
-              ...order,
-              status: 'Đã huỷ',
-              cancelledBy: 'customer',
-            }
-          : order,
-      ),
-    );
+  const handleCustomerCancelOrder = async (orderId) => {
+    const token = getCustomerToken();
+    if (!token) {
+      window.alert('Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.');
+      return;
+    }
+
+    const targetOrder = sharedOrders.find((order) => order.id === orderId);
+    const backendOrderId = Number(targetOrder?.backendId || 0);
+    if (!backendOrderId) {
+      return;
+    }
+
+    try {
+      const response = await fetch(`${ORDERS_API_URL}/${backendOrderId}/cancel`, {
+        method: 'PUT',
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+      const data = await parseApiResponse(response);
+      if (!response.ok) {
+        throw new Error(data.message || `HTTP ${response.status}`);
+      }
+
+      setSharedOrders((previous) =>
+        previous.map((order) =>
+          order.id === orderId
+            ? {
+                ...order,
+                status: 'Đã huỷ',
+                cancelledBy: 'customer',
+              }
+            : order,
+        ),
+      );
+    } catch (err) {
+      window.alert(`Không thể hủy đơn: ${err.message}`);
+    }
   };
 
-  const handleAdminDeleteOrder = (orderId) => {
-    setSharedOrders((previous) => previous.filter((order) => order.id !== orderId));
+  const handleAdminDeleteOrder = async (orderId) => {
+    const token = getAdminToken();
+    const backendOrderId = Number(orderId || 0);
+
+    if (!token || !backendOrderId) {
+      return;
+    }
+
+    try {
+      const response = await fetch(`${ORDERS_API_URL}/${backendOrderId}`, {
+        method: 'DELETE',
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+      const data = await parseApiResponse(response);
+
+      if (!response.ok) {
+        throw new Error(data.message || `HTTP ${response.status}`);
+      }
+
+      setSharedOrders((previous) => previous.filter((order) => Number(order.backendId || 0) !== backendOrderId));
+    } catch (err) {
+      window.alert(`Không thể xóa đơn hàng: ${err.message}`);
+    }
+  };
+
+  const handleAdminUpdateOrderStatus = async (orderId, nextStatus) => {
+    const token = getAdminToken();
+    const backendOrderId = Number(orderId || 0);
+    if (!token || !backendOrderId) {
+      return;
+    }
+
+    try {
+      const response = await fetch(`${ORDERS_API_URL}/${backendOrderId}/status`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ status: nextStatus }),
+      });
+      const data = await parseApiResponse(response);
+
+      if (!response.ok) {
+        throw new Error(data.message || `HTTP ${response.status}`);
+      }
+
+      setSharedOrders((previous) =>
+        previous.map((order) =>
+          Number(order.backendId || 0) === backendOrderId
+            ? {
+                ...order,
+                status: nextStatus,
+              }
+            : order,
+        ),
+      );
+    } catch (err) {
+      window.alert(`Không thể cập nhật trạng thái đơn: ${err.message}`);
+    }
   };
 
   const handleAdminLoginSubmit = async ({ email, password }) => {
@@ -1006,7 +1367,7 @@ function App() {
 
   if (page === 'admin-login') {
     if (adminAuth.isAdmin) {
-      return withSuspense(<Admin adminAuth={adminAuth} onAdminLogout={handleAdminLogout} products={sharedProducts} onSetProducts={setSharedProducts} customers={sharedCustomers} onSetCustomers={setSharedCustomers} orders={sharedOrders} onSetOrders={setSharedOrders} onDeleteOrder={handleAdminDeleteOrder} promotions={sharedPromotions} onSetPromotions={setSharedPromotions} vouchers={sharedVouchers} onSetVouchers={setSharedVouchers} />);
+      return withSuspense(<Admin adminAuth={adminAuth} onAdminLogout={handleAdminLogout} products={sharedProducts} onSetProducts={setSharedProducts} customers={sharedCustomers} onSetCustomers={setSharedCustomers} orders={sharedOrders} onSetOrders={setSharedOrders} onDeleteOrder={handleAdminDeleteOrder} onUpdateOrderStatus={handleAdminUpdateOrderStatus} promotions={sharedPromotions} onSetPromotions={setSharedPromotions} vouchers={sharedVouchers} onSetVouchers={setSharedVouchers} />);
     }
 
     return withSuspense(<AdminLogin onAdminLoginSubmit={handleAdminLoginSubmit} onGoHome={handleGoHome} />);
@@ -1017,7 +1378,7 @@ function App() {
       return withSuspense(<AdminLogin onAdminLoginSubmit={handleAdminLoginSubmit} onGoHome={handleGoHome} />);
     }
 
-    return withSuspense(<Admin adminAuth={adminAuth} onAdminLogout={handleAdminLogout} products={sharedProducts} onSetProducts={setSharedProducts} customers={sharedCustomers} onSetCustomers={setSharedCustomers} orders={sharedOrders} onSetOrders={setSharedOrders} onDeleteOrder={handleAdminDeleteOrder} promotions={sharedPromotions} onSetPromotions={setSharedPromotions} vouchers={sharedVouchers} onSetVouchers={setSharedVouchers} />);
+    return withSuspense(<Admin adminAuth={adminAuth} onAdminLogout={handleAdminLogout} products={sharedProducts} onSetProducts={setSharedProducts} customers={sharedCustomers} onSetCustomers={setSharedCustomers} orders={sharedOrders} onSetOrders={setSharedOrders} onDeleteOrder={handleAdminDeleteOrder} onUpdateOrderStatus={handleAdminUpdateOrderStatus} promotions={sharedPromotions} onSetPromotions={setSharedPromotions} vouchers={sharedVouchers} onSetVouchers={setSharedVouchers} />);
   }
 
   return withSuspense(

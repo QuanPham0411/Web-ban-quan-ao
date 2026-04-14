@@ -1,8 +1,18 @@
 const express = require('express');
 const { pool } = require('../db');
 const authMiddleware = require('../middleware/authMiddleware');
+const { parseBody, productWriteSchema } = require('../validation/schemas');
+const { logAdminAction } = require('../utils/auditLogger');
 
 const router = express.Router();
+
+const getClientIp = (req) => {
+  const xff = String(req.headers['x-forwarded-for'] || '').trim();
+  if (xff) {
+    return xff.split(',')[0].trim();
+  }
+  return String(req.ip || req.connection?.remoteAddress || 'unknown');
+};
 
 const requireAdminOrStaff = (req, res, next) => {
   const role = String(req.user?.role || '').toLowerCase();
@@ -30,12 +40,21 @@ const normalizeProductRow = (row) => ({
 
 // GET /api/products?category=all|women|men|kids|intimates&page=1&limit=50
 router.get('/', async (req, res) => {
-  const { category, page = 1, limit = 50 } = req.query;
+  const { category, page = 1, limit = 50, search = '', sortBy = 'created_at', sortOrder = 'desc' } = req.query;
   const parsedLimit = Number(limit);
   const parsedPage = Number(page);
   const safeLimit = Number.isInteger(parsedLimit) ? Math.min(Math.max(parsedLimit, 1), 100) : 50;
   const safePage = Number.isInteger(parsedPage) ? Math.max(parsedPage, 1) : 1;
   const offset = (safePage - 1) * safeLimit;
+  const keyword = String(search || '').trim();
+  const allowedSortBy = {
+    created_at: 'created_at',
+    name: 'name',
+    price: 'price',
+    quantity: 'quantity',
+  };
+  const safeSortBy = allowedSortBy[String(sortBy || '').toLowerCase()] || 'created_at';
+  const safeSortOrder = String(sortOrder || '').toLowerCase() === 'asc' ? 'ASC' : 'DESC';
 
   try {
     let query = 'SELECT id, category_key, category_label, name, price, price_formatted, description, image_url, size_label, stock_label, quantity, is_active, created_at FROM products WHERE is_active = true';
@@ -51,7 +70,13 @@ router.get('/', async (req, res) => {
       }
     }
 
-    query += ' ORDER BY created_at DESC, id DESC LIMIT ? OFFSET ?';
+    if (keyword) {
+      query += ' AND (name LIKE ? OR description LIKE ? OR category_label LIKE ?)';
+      const searchValue = `%${keyword}%`;
+      params.push(searchValue, searchValue, searchValue);
+    }
+
+    query += ` ORDER BY ${safeSortBy} ${safeSortOrder}, id DESC LIMIT ? OFFSET ?`;
     params.push(safeLimit, offset);
 
     const [rows] = await pool.query(query, params);
@@ -66,6 +91,11 @@ router.get('/', async (req, res) => {
         countQuery += ' AND category_key = ?';
         countParams.push(category);
       }
+    }
+    if (keyword) {
+      countQuery += ' AND (name LIKE ? OR description LIKE ? OR category_label LIKE ?)';
+      const searchValue = `%${keyword}%`;
+      countParams.push(searchValue, searchValue, searchValue);
     }
     const [[{ total }]] = await pool.query(countQuery, countParams);
 
@@ -92,20 +122,25 @@ router.get('/:id', async (req, res) => {
 });
 
 router.post('/', authMiddleware, requireAdminOrStaff, async (req, res) => {
-  const productId = String(req.body?.id || `prd-${Date.now()}`);
-  const categoryKey = String(req.body?.categoryKey || '').trim();
-  const categoryLabel = String(req.body?.categoryLabel || '').trim();
-  const name = String(req.body?.name || '').trim();
-  const description = String(req.body?.description || '').trim();
-  const imageUrl = String(req.body?.imageUrl || req.body?.image || '').trim();
-  const sizeLabel = String(req.body?.sizeLabel || req.body?.size || '').trim();
-  const stockLabel = String(req.body?.stockLabel || req.body?.stock || 'Còn hàng').trim();
-  const price = Number(req.body?.price || 0);
-  const quantity = parseQuantity(req.body?.quantity);
+  const parsed = parseBody(productWriteSchema, {
+    id: String(req.body?.id || `prd-${Date.now()}`),
+    categoryKey: String(req.body?.categoryKey || ''),
+    categoryLabel: String(req.body?.categoryLabel || ''),
+    name: String(req.body?.name || ''),
+    description: String(req.body?.description || ''),
+    imageUrl: String(req.body?.imageUrl || req.body?.image || ''),
+    sizeLabel: String(req.body?.sizeLabel || req.body?.size || ''),
+    stockLabel: String(req.body?.stockLabel || req.body?.stock || 'Còn hàng'),
+    price: Math.round(Number(req.body?.price || 0)),
+    quantity: parseQuantity(req.body?.quantity),
+  });
 
-  if (!categoryKey || !categoryLabel || !name || !Number.isFinite(price) || price <= 0) {
-    return res.status(400).json({ message: 'Thiếu thông tin sản phẩm hoặc giá không hợp lệ.' });
+  if (!parsed.ok) {
+    return res.status(400).json({ message: parsed.message });
   }
+
+  const payload = parsed.data;
+  const productId = payload.id;
 
   try {
     const [existing] = await pool.query('SELECT id FROM products WHERE id = ?', [productId]);
@@ -116,19 +151,28 @@ router.post('/', authMiddleware, requireAdminOrStaff, async (req, res) => {
     await pool.query(
       'INSERT INTO products (id, category_key, category_label, name, price, price_formatted, description, image_url, size_label, stock_label, quantity, is_active) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, true)',
       [
-        productId,
-        categoryKey,
-        categoryLabel,
-        name,
-        Math.round(price),
-        String(req.body?.priceFormatted || buildPriceFormatted(price)),
-        description,
-        imageUrl,
-        sizeLabel,
-        stockLabel,
-        quantity,
+        payload.id,
+        payload.categoryKey,
+        payload.categoryLabel,
+        payload.name,
+        payload.price,
+        buildPriceFormatted(payload.price),
+        payload.description,
+        payload.imageUrl,
+        payload.sizeLabel,
+        payload.stockLabel,
+        payload.quantity,
       ],
     );
+
+    await logAdminAction({
+      actor: req.user,
+      action: 'create_product',
+      entityType: 'product',
+      entityId: payload.id,
+      ip: getClientIp(req),
+      details: payload,
+    });
 
     const [rows] = await pool.query(
       'SELECT id, category_key, category_label, name, price, price_formatted, description, image_url, size_label, stock_label, quantity, is_active, created_at FROM products WHERE id = ?',
@@ -143,38 +187,44 @@ router.post('/', authMiddleware, requireAdminOrStaff, async (req, res) => {
 
 router.put('/:id', authMiddleware, requireAdminOrStaff, async (req, res) => {
   const productId = String(req.params.id || '').trim();
-  const categoryKey = String(req.body?.categoryKey || '').trim();
-  const categoryLabel = String(req.body?.categoryLabel || '').trim();
-  const name = String(req.body?.name || '').trim();
-  const description = String(req.body?.description || '').trim();
-  const imageUrl = String(req.body?.imageUrl || req.body?.image || '').trim();
-  const sizeLabel = String(req.body?.sizeLabel || req.body?.size || '').trim();
-  const stockLabel = String(req.body?.stockLabel || req.body?.stock || 'Còn hàng').trim();
-  const price = Number(req.body?.price || 0);
-  const quantity = parseQuantity(req.body?.quantity);
 
   if (!productId) {
     return res.status(400).json({ message: 'Mã sản phẩm không hợp lệ.' });
   }
 
-  if (!categoryKey || !categoryLabel || !name || !Number.isFinite(price) || price <= 0) {
-    return res.status(400).json({ message: 'Thiếu thông tin sản phẩm hoặc giá không hợp lệ.' });
+  const parsed = parseBody(productWriteSchema, {
+    id: productId,
+    categoryKey: String(req.body?.categoryKey || ''),
+    categoryLabel: String(req.body?.categoryLabel || ''),
+    name: String(req.body?.name || ''),
+    description: String(req.body?.description || ''),
+    imageUrl: String(req.body?.imageUrl || req.body?.image || ''),
+    sizeLabel: String(req.body?.sizeLabel || req.body?.size || ''),
+    stockLabel: String(req.body?.stockLabel || req.body?.stock || 'Còn hàng'),
+    price: Math.round(Number(req.body?.price || 0)),
+    quantity: parseQuantity(req.body?.quantity),
+  });
+
+  if (!parsed.ok) {
+    return res.status(400).json({ message: parsed.message });
   }
+
+  const payload = parsed.data;
 
   try {
     const [result] = await pool.query(
       'UPDATE products SET category_key = ?, category_label = ?, name = ?, price = ?, price_formatted = ?, description = ?, image_url = ?, size_label = ?, stock_label = ?, quantity = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
       [
-        categoryKey,
-        categoryLabel,
-        name,
-        Math.round(price),
-        String(req.body?.priceFormatted || buildPriceFormatted(price)),
-        description,
-        imageUrl,
-        sizeLabel,
-        stockLabel,
-        quantity,
+        payload.categoryKey,
+        payload.categoryLabel,
+        payload.name,
+        payload.price,
+        buildPriceFormatted(payload.price),
+        payload.description,
+        payload.imageUrl,
+        payload.sizeLabel,
+        payload.stockLabel,
+        payload.quantity,
         productId,
       ],
     );
@@ -182,6 +232,15 @@ router.put('/:id', authMiddleware, requireAdminOrStaff, async (req, res) => {
     if (result.affectedRows === 0) {
       return res.status(404).json({ message: 'Sản phẩm không tìm thấy.' });
     }
+
+    await logAdminAction({
+      actor: req.user,
+      action: 'update_product',
+      entityType: 'product',
+      entityId: productId,
+      ip: getClientIp(req),
+      details: payload,
+    });
 
     const [rows] = await pool.query(
       'SELECT id, category_key, category_label, name, price, price_formatted, description, image_url, size_label, stock_label, quantity, is_active, created_at FROM products WHERE id = ?',
@@ -206,6 +265,15 @@ router.delete('/:id', authMiddleware, requireAdminOrStaff, async (req, res) => {
     if (result.affectedRows === 0) {
       return res.status(404).json({ message: 'Sản phẩm không tìm thấy.' });
     }
+
+    await logAdminAction({
+      actor: req.user,
+      action: 'delete_product',
+      entityType: 'product',
+      entityId: productId,
+      ip: getClientIp(req),
+      details: {},
+    });
 
     return res.json({ message: 'Đã xóa sản phẩm.' });
   } catch (err) {
