@@ -7,7 +7,7 @@ const authMiddleware = require('../middleware/authMiddleware');
 
 const router = express.Router();
 const JWT_SECRET = String(process.env.JWT_SECRET || '').trim() || (process.env.NODE_ENV !== 'production' ? 'sunnywear_secret_key' : '');
-const PHONE_REGEX = /^\d{10}$/;
+const PHONE_REGEX = /^0\d{9}$/;
 const PASSWORD_REGEX = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z0-9]).{8,}$/;
 const OTP_EXPIRE_MS = 5 * 60 * 1000;
 const OTP_STORE = new Map();
@@ -259,7 +259,10 @@ router.post('/login', async (req, res) => {
   }
 
   try {
-    const [rows] = await pool.query('SELECT * FROM users WHERE email = ?', [normalizedEmail]);
+    const [rows] = await pool.query(
+      'SELECT id, full_name, email, phone, password_hash, role, is_active FROM users WHERE email = ? LIMIT 1',
+      [normalizedEmail],
+    );
     if (rows.length === 0) {
       return res.status(401).json({ message: 'Email hoặc mật khẩu không đúng.' });
     }
@@ -274,7 +277,6 @@ router.post('/login', async (req, res) => {
       return res.status(403).json({ message: 'Tài khoản của bạn đã bị khóa. Vui lòng liên hệ quản trị viên.' });
     }
 
-    await pool.query('UPDATE users SET last_login = CURRENT_TIMESTAMP WHERE id = ?', [user.id]);
     resetRateLimit(RATE_LIMIT_STORE.login, rateLimitKey);
 
     const token = jwt.sign(

@@ -67,6 +67,24 @@ app.use(express.json());
 // Kiểm tra kết nối DB khi khởi động
 const { pool, getDbPublicConfig } = require('./src/db');
 
+const ensureProductQuantityColumn = async () => {
+    const [rows] = await pool.query(
+        `SELECT COUNT(*) AS count
+         FROM information_schema.COLUMNS
+         WHERE TABLE_SCHEMA = DATABASE()
+           AND TABLE_NAME = 'products'
+           AND COLUMN_NAME = 'quantity'`,
+    );
+
+    const hasQuantityColumn = Number(rows[0]?.count || 0) > 0;
+
+    if (!hasQuantityColumn) {
+        await pool.query('ALTER TABLE products ADD COLUMN quantity INT NOT NULL DEFAULT 0 AFTER stock_label');
+    }
+
+    await pool.query('UPDATE products SET quantity = COALESCE(quantity, 0)');
+};
+
 const verifyDatabaseConnection = async () => {
     const conn = await pool.getConnection();
     try {
@@ -118,6 +136,7 @@ const PORT = process.env.PORT || 5000;
 const startServer = async () => {
     try {
         await verifyDatabaseConnection();
+        await ensureProductQuantityColumn();
         console.log('Kết nối MySQL thành công.', getDbPublicConfig());
     } catch (err) {
         console.error('Không thể kết nối MySQL:', err.message);

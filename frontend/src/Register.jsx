@@ -2,7 +2,7 @@ import { useState } from 'react';
 import CartIconButton from './components/CartIconButton';
 
 const normalizePhoneInput = (value) => String(value || '').replace(/\D/g, '').slice(0, 10);
-const isValidPhone = (value) => /^\d{10}$/.test(String(value || ''));
+const isValidPhone = (value) => /^0\d{9}$/.test(String(value || ''));
 const isStrongPassword = (value) => /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z0-9]).{8,}$/.test(String(value || ''));
 
 function Register({ onGoHome, onGoProducts, onGoOffers, onGoUsers, onGoCart, onGoLogin, cartCount, onSubmit, errorMessage }) {
@@ -99,7 +99,7 @@ function Register({ onGoHome, onGoProducts, onGoOffers, onGoUsers, onGoCart, onG
             placeholder="09xxxxxxxx"
             required
             inputMode="numeric"
-            pattern="[0-9]{10}"
+            pattern="0[0-9]{9}"
             maxLength={10}
             value={form.phone}
             onChange={(e) => handlePhoneChange(e.target.value)}

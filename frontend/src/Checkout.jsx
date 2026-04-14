@@ -160,7 +160,17 @@ const evaluatePromotion = (promotion, subtotal, totalItems, cartItems) => {
   const conditionText = `${promotion.title || ''} ${promotion.description || ''}`;
   const discountText = `${promotion.badge || ''} ${promotion.title || ''} ${promotion.description || ''}`;
   const condition = evaluateCondition(conditionText, subtotal, totalItems, cartItems);
-  const discount = parseDiscountAmount(discountText, subtotal);
+  const discountType = String(promotion.discountType || '').toLowerCase();
+  const discountValue = Number(promotion.discountValue || 0);
+  const structuredDiscount = Number.isFinite(discountValue) && discountValue > 0
+    ? (discountType === 'fixed' ? discountValue : Math.floor((subtotal * discountValue) / 100))
+    : 0;
+  const discount = structuredDiscount > 0 ? structuredDiscount : parseDiscountAmount(discountText, subtotal);
+
+  const minOrder = Number(promotion.minOrder || 0);
+  if (Number.isFinite(minOrder) && minOrder > 0 && subtotal < minOrder) {
+    return { eligible: false, discount: 0 };
+  }
 
   if (!condition.eligible || discount <= 0) {
     return { eligible: false, discount: 0 };
@@ -170,7 +180,7 @@ const evaluatePromotion = (promotion, subtotal, totalItems, cartItems) => {
 };
 
 const normalizePhoneInput = (value) => String(value || '').replace(/\D/g, '').slice(0, 10);
-const isValidPhone = (value) => /^\d{10}$/.test(String(value || ''));
+const isValidPhone = (value) => /^0\d{9}$/.test(String(value || ''));
 
 function Checkout({
   authState,
@@ -522,7 +532,7 @@ function Checkout({
               type="tel"
               required
               inputMode="numeric"
-              pattern="[0-9]{10}"
+              pattern="0[0-9]{9}"
               maxLength={10}
               value={form.phone}
               onChange={(e) => handlePhoneChange(e.target.value)}

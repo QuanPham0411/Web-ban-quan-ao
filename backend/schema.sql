@@ -28,6 +28,7 @@ CREATE TABLE IF NOT EXISTS products (
   image_url TEXT,
   size_label VARCHAR(100),
   stock_label VARCHAR(100),
+  quantity INT NOT NULL DEFAULT 0,
   is_active BOOLEAN DEFAULT TRUE,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
